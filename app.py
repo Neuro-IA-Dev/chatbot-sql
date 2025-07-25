@@ -82,7 +82,7 @@ Todas las consultas deben hacerse considerando este esquema y relaciones.
 # ---------------- CONEXIÓN A MySQL ----------------
 engine = create_engine("mysql+mysqlconnector://domolabs_admin:Pa$$w0rd_123@localhost:3306/domolabs_Chatbot_SQL_DB")
 db = SQLDatabase.from_uri(
-    uri="mysql+mysqlconnector://domolabs_admin:Pa$$w0rd_123@localhost:3306/domolabs_Chatbot_SQL_DB"
+    uri="mysql+mysqlconnector://domolabs_admin:Pa$$w0rd_123@s1355.use1.mysecurecloudhost.com:3306/domolabs_Chatbot_SQL_DB"
 )
 
 # ---------------- AGENTE DE LENGUAJE ----------------
