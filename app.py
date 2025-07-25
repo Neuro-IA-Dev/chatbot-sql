@@ -93,9 +93,16 @@ llm = ChatOpenAI(temperature=0, openai_api_key=st.secrets["OPENAI_API_KEY"])
 
 from sqlalchemy import create_engine
 
+from sqlalchemy import create_engine
+from langchain_community.utilities.sql_database import SQLDatabase
+
+engine = create_engine("mysql+mysqlconnector://domolabs_admin:Pa$$w0rd_123@localhost:3306/domolabs_Chatbot_SQL_DB")
+
 db = SQLDatabase(
-    engine=create_engine("mysql+mysqlconnector://domolabs_admin:Pa$$w0rd_123@localhost:3306/domolabs_Chatbot_SQL_DB"),
-    include_tables=None  # O lista de tablas si quieres limitar
+    engine=engine,
+    include_tables=[
+        "articulos", "ventas", "tiendas", "marca", "canal"
+    ]
 )
 
 prompt_template = PromptTemplate(
