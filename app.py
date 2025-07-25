@@ -2,18 +2,18 @@
 
 import streamlit as st
 import mysql.connector
-from pathlib import Path
+from sqlalchemy import create_engine
+from langchain_community.utilities.sql_database import SQLDatabase
+from langchain.chains import SQLDatabaseChain
+from langchain.chat_models import ChatOpenAI
+from langchain.prompts import PromptTemplate
+from langchain.memory import ConversationBufferMemory
 import pandas as pd
 import datetime
 import base64
-from sqlalchemy import create_engine
-from langchain.chat_models import ChatOpenAI
-from langchain.agents.agent_toolkits import create_sql_agent
-from langchain_community.agent_toolkits.sql.base import SQLDatabaseToolkit
-from langchain_community.utilities.sql_database import SQLDatabase
 
 # ---------------- CONFIGURACIÓN ----------------
-st.set_page_config(page_title="Asistente Inteligente de NeuroVIA", layout="wide")
+st.set_page_config(page_title="Asistente Inteligente de NeuroVIA")
 st.markdown("""
     <style>
         .block-container {
@@ -80,18 +80,26 @@ Todas las consultas deben hacerse considerando este esquema y relaciones.
 
 # ---------------- CONEXIÓN A MySQL ----------------
 engine = create_engine("mysql+mysqlconnector://domolabs_admin:Pa$$w0rd_123@localhost:3306/domolabs_Chatbot_SQL_DB")
-from sqlalchemy import create_engine
-from langchain_community.utilities.sql_database import SQLDatabase
-
-engine = create_engine("mysql+mysqlconnector://domolabs_admin:Pa$$w0rd_123@localhost:3306/domolabs_Chatbot_SQL_DB")
-
-db = SQLDatabase.from_engine(engine, include_tables=["articulos", "ventas", "tiendas", "marca", "canal"])
-
+db = SQLDatabase(engine=engine, include_tables=["articulos", "ventas", "tiendas", "marca", "canal"])
 
 # ---------------- AGENTE DE LENGUAJE ----------------
 llm = ChatOpenAI(temperature=0, openai_api_key=st.secrets["OPENAI_API_KEY"])
-toolkit = SQLDatabaseToolkit(db=db, llm=llm)
-chain = create_sql_agent(llm=llm, toolkit=toolkit, verbose=True)
+
+prompt_template = PromptTemplate(
+    input_variables=["input", "schema", "dialect"],
+    template="""
+Eres un experto en SQL. Usa el siguiente esquema de base de datos:
+{schema}
+
+La pregunta del usuario es:
+{input}
+
+Escribe solo la consulta SQL necesaria en dialecto {dialect}, sin explicaciones.
+"""
+)
+
+memory = ConversationBufferMemory(memory_key="chat_history")
+chain = SQLDatabaseChain.from_llm(llm=llm, db=db, prompt=prompt_template, memory=memory, verbose=True)
 
 # ---------------- INTERFAZ ----------------
 st.markdown("""<br><b>💬 Consulta en lenguaje natural</b>""", unsafe_allow_html=True)
@@ -100,8 +108,9 @@ user_input = st.chat_input("Pregunta en lenguaje natural")
 if user_input:
     with st.spinner("Procesando..."):
         try:
-            result = chain.run(user_input)
+            result = chain.run(input=user_input, schema=db_schema)
             st.markdown("""<br>🔍 <b>Consulta SQL Generada:</b>""", unsafe_allow_html=True)
+            st.code(chain.intermediate_steps[-1]['sql_cmd'], language="sql")
             st.success(result)
         except Exception as e:
             st.error(f"Error al ejecutar la consulta: {str(e)}")
