@@ -5,7 +5,7 @@ import mysql.connector
 from langchain.prompts import PromptTemplate
 from langchain.memory import ConversationBufferMemory
 from langchain.chat_models import ChatOpenAI
-from langchain.chains import SQLDatabaseChain
+from langchain.chains.sql_database.base import SQLDatabaseChain
 from langchain_community.utilities import SQLDatabase
 from sqlalchemy import create_engine
 from pathlib import Path
