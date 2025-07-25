@@ -7,7 +7,7 @@ pandas
 # Núcleo de LangChain
 langchain>=0.1.17
 langchain-community>=0.0.19
-
+langchain-experimental
 # Conector para modelos OpenAI
 langchain-openai>=0.0.5
 
