@@ -1,5 +1,6 @@
-streamlit
-openai
 langchain
+langchain-community
+openai
 mysql-connector-python
+streamlit
 pandas
