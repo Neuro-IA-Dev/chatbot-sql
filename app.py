@@ -1,16 +1,14 @@
 # chatbot-sql/app.py
 
+import os
+import openai
 import streamlit as st
 import mysql.connector
-from langchain.chains import SQLDatabaseChain
-from langchain.chat_models import ChatOpenAI
-from langchain.sql_database import SQLDatabase
-from langchain.prompts import PromptTemplate
-from langchain.memory import ConversationBufferMemory
-from pathlib import Path
 import pandas as pd
-import datetime
-import base64
+from langchain.chat_models import ChatOpenAI
+from langchain.prompts import PromptTemplate
+from pathlib import Path
+import csv
 
 # ---------------- CONFIGURACIÓN ----------------
 st.set_page_config(page_title="Asistente Inteligente de NeuroVIA", layout="wide")
