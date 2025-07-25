@@ -1,96 +1,96 @@
-
+import os
 import streamlit as st
-import openai
 import mysql.connector
 import pandas as pd
+from langchain.chat_models import ChatOpenAI
+from langchain.prompts import PromptTemplate
+from pathlib import Path
 import csv
 
-# Configura la clave de OpenAI
-openai.api_key = st.secrets["OPENAI_API_KEY"]
-
-# Datos de conexión a MySQL
-db_config = {
-    "host": "localhost",
-    "user": "domolabs_admin",
-    "password": "Pa$$w0rd_123",
-    "database": "domolabs_Chatbot_SQL_DB",
-    "port": 3306
-}
-
-# UI
+# CONFIGURACIÓN INICIAL
+st.set_page_config(page_title="Asistente Inteligente de NeuroVIA", page_icon="🧠")
 st.image("assets/logo_neurovia.png", width=180)
-st.title("🤖 Asistente Inteligente de NeurovIA")
+st.title("🧠 Asistente Inteligente de NeuroVIA")
 st.markdown("Haz una pregunta y el sistema generará y ejecutará una consulta SQL automáticamente.")
 
-query = st.text_input("🧠 Pregunta en lenguaje natural")
+# API OPENAI
+openai.api_key = st.secrets["OPENAI_API_KEY"]
+llm = ChatOpenAI(temperature=0)
 
-# Obtener esquema de la base
-def obtener_esquema():
+# FUNCIÓN PARA CONECTAR A MySQL
+def connect_db():
+    return mysql.connector.connect(
+        host="localhost",
+        port=3306,
+        user="domolabs_admin",
+        password="Pa$$w0rd_123",
+        database="domolabs_Chatbot_SQL_DB"
+    )
+
+# PROMPT PERSONALIZADO
+sql_prompt = PromptTemplate(
+    input_variables=["pregunta"],
+    template="""
+    Eres un asistente experto en SQL para una base de datos MySQL.
+    Devuelve únicamente el código SQL sin explicaciones.
+
+    Pregunta: {pregunta}
+    SQL:
+    """
+)
+
+# FUNCIONES DE LOG
+if not Path("chat_logs.csv").exists():
+    with open("chat_logs.csv", "w", encoding="utf-8") as f:
+        f.write("Pregunta,SQL,Resultado\n")
+
+def log_interaction(pregunta, sql, resultado):
+    with open("chat_logs.csv", "a", newline="", encoding="utf-8") as logfile:
+        writer = csv.writer(logfile)
+        writer.writerow([pregunta, sql, resultado])
+
+# ENTRADA DE USUARIO
+pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
+
+if pregunta:
+    # GENERAR SQL
+    prompt = sql_prompt.format(pregunta=pregunta)
+    sql_query = llm.predict(prompt).strip().strip("```sql").strip("```")
+
+    st.markdown("🔍 **Consulta SQL Generada:**")
+    st.code(sql_query, language="sql")
+
+    # CONECTAR Y EJECUTAR
     try:
-        conn = mysql.connector.connect(**db_config)
+        conn = connect_db()
         cursor = conn.cursor()
-        cursor.execute("SHOW TABLES;")
-        tablas = cursor.fetchall()
-        esquema = ""
-        for (tabla,) in tablas:
-            cursor.execute(f"DESCRIBE {tabla};")
-            columnas = cursor.fetchall()
-            esquema += f"Tabla: {tabla}\n"
-            for col in columnas:
-                esquema += f"- {col[0]} ({col[1]})\n"
+        cursor.execute(sql_query)
+
+        # SI LA CONSULTA ES SELECT, MOSTRAR RESULTADOS
+        if sql_query.lower().startswith("select"):
+            columns = [col[0] for col in cursor.description]
+            results = cursor.fetchall()
+            df = pd.DataFrame(results, columns=columns)
+            st.dataframe(df)
+            resultado_str = f"{len(df)} filas"
+        else:
+            conn.commit()
+            resultado_str = f"Consulta ejecutada correctamente."
+
         cursor.close()
         conn.close()
-        return esquema
+        log_interaction(pregunta, sql_query, resultado_str)
+
     except Exception as e:
-        return f"Error al obtener esquema: {e}"
+        st.error(f"❌ Error al ejecutar la consulta: {e}")
+        log_interaction(pregunta, sql_query, f"Error: {e}")
 
-# Convertir pregunta a SQL
-def generar_sql(pregunta, schema_info):
-    prompt = f"""Eres un experto en SQL. Con el siguiente esquema:
-
-{schema_info}
-
-Convierte esta pregunta del usuario en SQL válida:
-Pregunta: "{pregunta}"
-SQL:
-"""
-    respuesta = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0
-    )
-    return respuesta.choices[0].message.content.strip()
-
-# Ejecutar SQL
-def ejecutar_sql(sql):
-    try:
-        conn = mysql.connector.connect(**db_config)
-        df = pd.read_sql(sql, conn)
-        conn.close()
-        return df
-    except Exception as e:
-        return f"❌ Error al ejecutar la consulta: {e}"
-
-# Log
-def log(query, sql):
-    with open("chat_logs.csv", "a", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow([query, sql])
-
-# Procesar consulta
-if query:
-    with st.spinner("Generando consulta SQL..."):
-        esquema = obtener_esquema()
-        sql = generar_sql(query, esquema)
-    st.code(sql, language="sql")
-    resultado = ejecutar_sql(sql)
-    if isinstance(resultado, pd.DataFrame):
-        st.dataframe(resultado)
-        log(query, sql)
-    else:
-        st.error(resultado)
-
-# Descargar logs
+# BOTÓN DESCARGAR LOGS
 if Path("chat_logs.csv").exists():
     with open("chat_logs.csv", "r", encoding="utf-8") as f:
-        st.download_button("⬇️ Descargar logs", f, "chat_logs.csv", "text/csv")
+        st.download_button(
+            label="📥 Descargar logs",
+            data=f,
+            file_name="chat_logs.csv",
+            mime="text/csv"
+        )
