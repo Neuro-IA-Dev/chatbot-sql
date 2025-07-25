@@ -2,10 +2,11 @@
 
 import streamlit as st
 import mysql.connector
-from langchain.chat_models import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from langchain.memory import ConversationBufferMemory
-from langchain_community.utilities.sql_database import SQLDatabase
+from langchain.chat_models import ChatOpenAI
+from langchain.chains import SQLDatabaseChain
+from langchain_community.utilities import SQLDatabase
 from sqlalchemy import create_engine
 from pathlib import Path
 import pandas as pd
@@ -79,25 +80,11 @@ Todas las consultas deben hacerse considerando este esquema y relaciones.
 """
 
 # ---------------- CONEXIÓN A MySQL ----------------
-def get_connection():
-    return mysql.connector.connect(
-        host="localhost",
-        port=3306,
-        user="domolabs_admin",
-        password="Pa$$w0rd_123",
-        database="domolabs_Chatbot_SQL_DB"
-    )
+engine = create_engine("mysql+mysqlconnector://domolabs_admin:Pa$$w0rd_123@localhost:3306/domolabs_Chatbot_SQL_DB")
+db = SQLDatabase(engine=engine)
 
 # ---------------- AGENTE DE LENGUAJE ----------------
 llm = ChatOpenAI(temperature=0, openai_api_key=st.secrets["OPENAI_API_KEY"])
-
-engine = create_engine("mysql+mysqlconnector://domolabs_admin:Pa$$w0rd_123@localhost:3306/domolabs_Chatbot_SQL_DB")
-
-# Tabla limitadas manualmente para evitar introspección automática
-db = SQLDatabase(
-    engine=engine,
-    include_tables=["articulos", "ventas", "tiendas", "marca", "canal"]
-)
 
 prompt_template = PromptTemplate(
     input_variables=["input", "schema", "dialect"],
@@ -113,7 +100,6 @@ Escribe solo la consulta SQL necesaria en dialecto {dialect}, sin explicaciones.
 )
 
 memory = ConversationBufferMemory(memory_key="chat_history")
-from langchain.chains import SQLDatabaseChain
 chain = SQLDatabaseChain.from_llm(llm=llm, db=db, prompt=prompt_template, memory=memory, verbose=True)
 
 # ---------------- INTERFAZ ----------------
@@ -129,4 +115,3 @@ if user_input:
             st.success(result)
         except Exception as e:
             st.error(f"Error al ejecutar la consulta: {str(e)}")
-
