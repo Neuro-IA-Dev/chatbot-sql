@@ -1,14 +1,3 @@
-
-
-import streamlit as st
-import requests
-
-st.subheader("🔎 Verificación de IP Pública de Streamlit")
-try:
-    ip = requests.get("https://api.ipify.org").text
-    st.success(f"Tu IP pública es: `{ip}`")
-except Exception as e:
-    st.error(f"No se pudo obtener la IP: {e}")
     
 import os
 import openai
