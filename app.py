@@ -21,7 +21,7 @@ llm = ChatOpenAI(temperature=0)
 # FUNCIÓN PARA CONECTAR A MySQL
 def connect_db():
     return mysql.connector.connect(
-        host="localhost",
+        host="11.128.0.17",
         port=3306,
         user="domolabs_admin",
         password="Pa$$w0rd_123",
