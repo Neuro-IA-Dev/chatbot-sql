@@ -91,8 +91,11 @@ def get_connection():
 # ---------------- AGENTE DE LENGUAJE ----------------
 llm = ChatOpenAI(temperature=0, openai_api_key=st.secrets["OPENAI_API_KEY"])
 
-db = SQLDatabase.from_uri(
-    uri="mysql+mysqlconnector://domolabs_admin:Pa$$w0rd_123@localhost:3306/domolabs_Chatbot_SQL_DB"
+from sqlalchemy import create_engine
+
+db = SQLDatabase(
+    engine=create_engine("mysql+mysqlconnector://domolabs_admin:Pa$$w0rd_123@localhost:3306/domolabs_Chatbot_SQL_DB"),
+    include_tables=None  # O lista de tablas si quieres limitar
 )
 
 prompt_template = PromptTemplate(
