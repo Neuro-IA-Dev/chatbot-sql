@@ -1,98 +1,127 @@
-    
-import os
-import openai
+# chatbot-sql/app.py
+
 import streamlit as st
 import mysql.connector
-import pandas as pd
+from langchain.chains import SQLDatabaseChain
 from langchain.chat_models import ChatOpenAI
+from langchain.sql_database import SQLDatabase
 from langchain.prompts import PromptTemplate
+from langchain.memory import ConversationBufferMemory
 from pathlib import Path
-import csv
+import pandas as pd
+import datetime
+import base64
 
-# CONFIGURACIÓN INICIAL
-st.set_page_config(page_title="Asistente Inteligente de NeuroVIA", page_icon="🧠")
-st.image("assets/logo_neurovia.png", width=180)
-st.title("🧠 Asistente Inteligente de NeuroVIA")
-st.markdown("Haz una pregunta y el sistema generará y ejecutará una consulta SQL automáticamente.")
+# ---------------- CONFIGURACIÓN ----------------
+st.set_page_config(page_title="Asistente Inteligente de NeuroVIA", layout="wide")
+st.markdown("""
+    <style>
+        .block-container {
+            padding-top: 1rem;
+        }
+        .stChatMessage { background-color: #000 !important; }
+    </style>
+""", unsafe_allow_html=True)
 
-# API OPENAI
-openai.api_key = st.secrets["OPENAI_API_KEY"]
-llm = ChatOpenAI(temperature=0)
+# Logo y título
+col1, col2 = st.columns([0.2, 0.8])
+with col1:
+    st.image("assets/logo_neurovia.png", width=180)
+with col2:
+    st.markdown("""
+        <h1>🧠 Asistente Inteligente de <span style='color:#ffffff'>NeuroVIA</span></h1>
+        <p style="font-size:1.2rem; color:#ccc;">Haz una pregunta y el sistema generará y ejecutará una consulta SQL automáticamente.</p>
+    """, unsafe_allow_html=True)
 
-# FUNCIÓN PARA CONECTAR A MySQL
-def connect_db():
+# ---------------- ESQUEMA DE BASE DE DATOS ----------------
+db_schema = """
+Base de datos: domolabs_Chatbot_SQL_DB
+
+Tablas y relaciones:
+
+1. **articulos**
+   - cod_articulo (PK)
+   - desc_articulo
+   - desc_generico
+   - desc_temporada
+   - desc_grado_moda
+
+2. **ventas**
+   - numero_documento (PK)
+   - cod_articulo (FK → articulos.cod_articulo)
+   - ingresos
+   - costos
+   - tipo_documento
+   - cod_tienda (FK → tiendas.cod_tienda)
+   - fecha_venta
+
+3. **tiendas**
+   - cod_tienda (PK)
+   - desc_tienda
+   - cod_canal (FK → canal.cod_canal)
+   - cod_marca (FK → marca.cod_marca)
+
+4. **marca**
+   - cod_marca (PK)
+   - desc_marca
+
+5. **canal**
+   - cod_canal (PK)
+   - desc_canal
+
+Relaciones clave:
+- ventas.cod_articulo → articulos.cod_articulo
+- ventas.cod_tienda → tiendas.cod_tienda
+- tiendas.cod_marca → marca.cod_marca
+- tiendas.cod_canal → canal.cod_canal
+
+Todas las consultas deben hacerse considerando este esquema y relaciones.
+"""
+
+# ---------------- CONEXIÓN A MySQL ----------------
+def get_connection():
     return mysql.connector.connect(
-        host="s1355.use1.mysecurecloudhost.com",
+        host="localhost",
         port=3306,
         user="domolabs_admin",
         password="Pa$$w0rd_123",
         database="domolabs_Chatbot_SQL_DB"
     )
 
-# PROMPT PERSONALIZADO
-sql_prompt = PromptTemplate(
-    input_variables=["pregunta"],
-    template="""
-    Eres un asistente experto en SQL para una base de datos MySQL.
-    Devuelve únicamente el código SQL sin explicaciones.
+# ---------------- AGENTE DE LENGUAJE ----------------
+llm = ChatOpenAI(temperature=0, openai_api_key=st.secrets["OPENAI_API_KEY"])
 
-    Pregunta: {pregunta}
-    SQL:
-    """
+db = SQLDatabase.from_uri(
+    uri="mysql+mysqlconnector://domolabs_admin:Pa$$w0rd_123@localhost:3306/domolabs_Chatbot_SQL_DB"
 )
 
-# FUNCIONES DE LOG
-if not Path("chat_logs.csv").exists():
-    with open("chat_logs.csv", "w", encoding="utf-8") as f:
-        f.write("Pregunta,SQL,Resultado\n")
+prompt_template = PromptTemplate(
+    input_variables=["input", "schema", "dialect"],
+    template="""
+Eres un experto en SQL. Usa el siguiente esquema de base de datos:
+{schema}
 
-def log_interaction(pregunta, sql, resultado):
-    with open("chat_logs.csv", "a", newline="", encoding="utf-8") as logfile:
-        writer = csv.writer(logfile)
-        writer.writerow([pregunta, sql, resultado])
+La pregunta del usuario es:
+{input}
 
-# ENTRADA DE USUARIO
-pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
+Escribe solo la consulta SQL necesaria en dialecto {dialect}, sin explicaciones.
+"""
+)
 
-if pregunta:
-    # GENERAR SQL
-    prompt = sql_prompt.format(pregunta=pregunta)
-    sql_query = llm.predict(prompt).strip().strip("```sql").strip("```")
+memory = ConversationBufferMemory(memory_key="chat_history")
+chain = SQLDatabaseChain.from_llm(llm=llm, db=db, prompt=prompt_template, memory=memory, verbose=True)
 
-    st.markdown("🔍 **Consulta SQL Generada:**")
-    st.code(sql_query, language="sql")
+# ---------------- INTERFAZ ----------------
+st.markdown("""<br><b>💬 Consulta en lenguaje natural</b>""", unsafe_allow_html=True)
+user_input = st.chat_input("Pregunta en lenguaje natural")
 
-    # CONECTAR Y EJECUTAR
-    try:
-        conn = connect_db()
-        cursor = conn.cursor()
-        cursor.execute(sql_query)
+if user_input:
+    with st.spinner("Procesando..."):
+        try:
+            result = chain.run(input=user_input, schema=db_schema)
+            st.markdown("""<br>🔍 <b>Consulta SQL Generada:</b>""", unsafe_allow_html=True)
+            st.code(chain.intermediate_steps[-1]['sql_cmd'], language="sql")
+            st.success(result)
+        except Exception as e:
+            st.error(f"Error al ejecutar la consulta: {str(e)}")
 
-        # SI LA CONSULTA ES SELECT, MOSTRAR RESULTADOS
-        if sql_query.lower().startswith("select"):
-            columns = [col[0] for col in cursor.description]
-            results = cursor.fetchall()
-            df = pd.DataFrame(results, columns=columns)
-            st.dataframe(df)
-            resultado_str = f"{len(df)} filas"
-        else:
-            conn.commit()
-            resultado_str = f"Consulta ejecutada correctamente."
-
-        cursor.close()
-        conn.close()
-        log_interaction(pregunta, sql_query, resultado_str)
-
-    except Exception as e:
-        st.error(f"❌ Error al ejecutar la consulta: {e}")
-        log_interaction(pregunta, sql_query, f"Error: {e}")
-
-# BOTÓN DESCARGAR LOGS
-if Path("chat_logs.csv").exists():
-    with open("chat_logs.csv", "r", encoding="utf-8") as f:
-        st.download_button(
-            label="📥 Descargar logs",
-            data=f,
-            file_name="chat_logs.csv",
-            mime="text/csv"
-        )
