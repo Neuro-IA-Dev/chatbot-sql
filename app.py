@@ -18,7 +18,7 @@ st.markdown("Haz una pregunta y el sistema generará y ejecutará una consulta S
 
 # API OPENAI
 openai.api_key = st.secrets["OPENAI_API_KEY"]
-llm = ChatOpenAI(temperature=0)
+llm = ChatOpenAI(model_name="gpt-4o", temperature=0)
 
 # CONEXIÓN A MySQL
 def connect_db():
