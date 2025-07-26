@@ -1,12 +1,5 @@
-import streamlit as st
-import requests
+# app.py
 
-st.subheader("🔎 Verificación de IP Pública de Streamlit")
-try:
-    ip = requests.get("https://api.ipify.org").text
-    st.success(f"Tu IP pública es: `{ip}`")
-except Exception as e:
-    st.error(f"No se pudo obtener la IP: {e}")    
 import os
 import openai
 import streamlit as st
@@ -27,7 +20,7 @@ st.markdown("Haz una pregunta y el sistema generará y ejecutará una consulta S
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 llm = ChatOpenAI(temperature=0)
 
-# FUNCIÓN PARA CONECTAR A MySQL
+# CONEXIÓN A MySQL
 def connect_db():
     return mysql.connector.connect(
         host="s1355.use1.mysecurecloudhost.com",
@@ -37,19 +30,68 @@ def connect_db():
         database="domolabs_Chatbot_SQL_DB"
     )
 
-# PROMPT PERSONALIZADO
+# ESQUEMA DE LA BASE DE DATOS PARA EL PROMPT
+db_schema = """
+Base de datos: domolabs_Chatbot_SQL_DB
+
+Tablas y relaciones:
+
+1. articulos
+   - cod_articulo (PK)
+   - desc_articulo
+   - desc_generico
+   - desc_temporada
+   - desc_grado_moda
+
+2. ventas
+   - numero_documento (PK)
+   - cod_articulo (FK → articulos.cod_articulo)
+   - ingresos
+   - costos
+   - tipo_documento
+   - cod_tienda (FK → tiendas.cod_tienda)
+   - fecha_venta
+
+3. tiendas
+   - cod_tienda (PK)
+   - desc_tienda
+   - cod_canal (FK → canal.cod_canal)
+   - cod_marca (FK → marca.cod_marca)
+
+4. marca
+   - cod_marca (PK)
+   - desc_marca
+
+5. canal
+   - cod_canal (PK)
+   - desc_canal
+
+Relaciones clave:
+- ventas.cod_articulo → articulos.cod_articulo
+- ventas.cod_tienda → tiendas.cod_tienda
+- tiendas.cod_marca → marca.cod_marca
+- tiendas.cod_canal → canal.cod_canal
+"""
+
+# PROMPT PERSONALIZADO CON ESQUEMA
 sql_prompt = PromptTemplate(
     input_variables=["pregunta"],
-    template="""
-    Eres un asistente experto en SQL para una base de datos MySQL.
-    Devuelve únicamente el código SQL sin explicaciones.
+    template=f"""
+Eres un asistente experto en SQL para una base de datos MySQL.
+Este es el esquema de la base de datos:
 
-    Pregunta: {pregunta}
-    SQL:
-    """
+{db_schema}
+
+Genera únicamente el código SQL correcto basado en el esquema anterior.
+No des explicaciones.
+
+Pregunta: {{pregunta}}
+
+SQL:
+"""
 )
 
-# FUNCIONES DE LOG
+# LOGGING LOCAL
 if not Path("chat_logs.csv").exists():
     with open("chat_logs.csv", "w", encoding="utf-8") as f:
         f.write("Pregunta,SQL,Resultado\n")
@@ -59,11 +101,11 @@ def log_interaction(pregunta, sql, resultado):
         writer = csv.writer(logfile)
         writer.writerow([pregunta, sql, resultado])
 
-# ENTRADA DE USUARIO
+# ENTRADA
 pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
 
 if pregunta:
-    # GENERAR SQL
+    # GENERAR CONSULTA SQL
     prompt = sql_prompt.format(pregunta=pregunta)
     sql_query = llm.predict(prompt).strip().strip("```sql").strip("```")
 
@@ -76,7 +118,6 @@ if pregunta:
         cursor = conn.cursor()
         cursor.execute(sql_query)
 
-        # SI LA CONSULTA ES SELECT, MOSTRAR RESULTADOS
         if sql_query.lower().startswith("select"):
             columns = [col[0] for col in cursor.description]
             results = cursor.fetchall()
@@ -85,7 +126,7 @@ if pregunta:
             resultado_str = f"{len(df)} filas"
         else:
             conn.commit()
-            resultado_str = f"Consulta ejecutada correctamente."
+            resultado_str = "Consulta ejecutada correctamente."
 
         cursor.close()
         conn.close()
@@ -95,7 +136,7 @@ if pregunta:
         st.error(f"❌ Error al ejecutar la consulta: {e}")
         log_interaction(pregunta, sql_query, f"Error: {e}")
 
-# BOTÓN DESCARGAR LOGS
+# DESCARGAR LOGS
 if Path("chat_logs.csv").exists():
     with open("chat_logs.csv", "r", encoding="utf-8") as f:
         st.download_button(
@@ -103,4 +144,5 @@ if Path("chat_logs.csv").exists():
             data=f,
             file_name="chat_logs.csv",
             mime="text/csv"
-        ) 	 	
+        )
+	
