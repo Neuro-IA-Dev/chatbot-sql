@@ -105,6 +105,8 @@ def log_interaction(pregunta, sql, resultado):
 pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
 
 if pregunta:
+    st.markdown(f"**📝 Pregunta:** {pregunta}")
+
     # GENERAR CONSULTA SQL
     prompt = sql_prompt.format(pregunta=pregunta)
     sql_query = llm.predict(prompt).strip().strip("```sql").strip("```")
@@ -145,4 +147,3 @@ if Path("chat_logs.csv").exists():
             file_name="chat_logs.csv",
             mime="text/csv"
         )
-	
