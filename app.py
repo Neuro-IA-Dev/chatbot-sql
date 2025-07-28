@@ -265,6 +265,28 @@ if st.toggle("📊 Mostrar dashboard de uso"):
     except Exception as e:
         st.error(f"❌ No se pudieron cargar las métricas: {e}")
 
+# --- MONITOREO DE COSTOS OPENAI ---
+def obtener_consumo_openai(api_key):
+    try:
+        headers = {"Authorization": f"Bearer {api_key}"}
+        hoy = datetime.date.today()
+        inicio_mes = hoy.replace(day=1)
+        url = f"https://api.openai.com/v1/dashboard/billing/usage?start_date={inicio_mes}&end_date={hoy}"
+        response = requests.get(url, headers=headers)
+
+        if response.status_code == 200:
+            data = response.json()
+            usd = data.get("total_usage", 0) / 100  # en centavos
+            return round(usd, 2)
+        else:
+            return f"Error {response.status_code}"
+    except Exception as e:
+        return f"Error: {e}"
+
+if st.toggle("💰 Ver costo acumulado en OpenAI"):
+    with st.spinner("Consultando consumo..."):
+        consumo = obtener_consumo_openai(st.secrets["OPENAI_API_KEY"])
+        st.metric("Consumo actual OpenAI (mes)", f"${consumo}")
 
 
 
