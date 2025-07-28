@@ -2,6 +2,7 @@
 
 import os
 import datetime
+import requests
 import openai
 import streamlit as st
 import mysql.connector
