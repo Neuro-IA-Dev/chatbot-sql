@@ -17,19 +17,29 @@ st.title("🧠 Asistente Inteligente de Intanis/NeuroVIA")
 
 if st.button("🧹 Borrar historial de preguntas"):
     st.session_state["historial"] = []
+    st.session_state["conversacion"] = []
     st.success("Historial de conversación borrado.")
 
 st.markdown("Haz una pregunta y el sistema generará y ejecutará una consulta SQL automáticamente.")
 
-# Inicializar historial
+# Inicializar historial en la sesión
 if "historial" not in st.session_state:
     st.session_state["historial"] = []
+
+if "conversacion" not in st.session_state:
+    st.session_state["conversacion"] = []
+
+# Mostrar historial conversacional
+for entrada in st.session_state["conversacion"]:
+    st.markdown(f"**🧠 Pregunta:** {entrada['pregunta']}")
+    st.markdown(f"**💬 Respuesta:** {entrada['respuesta']}")
+    st.markdown("---")
 
 # API OPENAI
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 llm = ChatOpenAI(temperature=0)
 
-# CONEXIÓN A MYSQL
+# CONEXIÓN A MySQL
 def connect_db():
     return mysql.connector.connect(
         host="s1355.use1.mysecurecloudhost.com",
@@ -45,7 +55,7 @@ def es_consulta_segura(sql):
     comandos_peligrosos = ["drop", "delete", "truncate", "alter", "update", "insert", "--", "/*", "grant", "revoke"]
     return not any(comando in sql for comando in comandos_peligrosos)
 
-# ESQUEMA PARA EL PROMPT
+# ESQUEMA DE LA BASE DE DATOS PARA EL PROMPT
 db_schema = """
 Base de datos: domolabs_Chatbot_SQL_DB
 
@@ -88,6 +98,36 @@ Relaciones clave:
 - tiendas.cod_canal → canal.cod_canal
 """
 
+# PROMPT PERSONALIZADO CON EJEMPLOS
+ejemplos = """
+Ejemplo 1:
+Pregunta: ¿Cuál es la tienda que más ha vendido?
+SQL: SELECT t.desc_tienda, SUM(v.ingresos) AS total_ventas
+FROM ventas v
+JOIN tiendas t ON v.cod_tienda = t.cod_tienda
+GROUP BY t.desc_tienda
+ORDER BY total_ventas DESC
+LIMIT 1;
+
+Ejemplo 2:
+Pregunta: ¿Cuáles son los artículos más vendidos?
+SQL: SELECT a.desc_articulo, COUNT(*) AS cantidad
+FROM ventas v
+JOIN articulos a ON v.cod_articulo = a.cod_articulo
+GROUP BY a.desc_articulo
+ORDER BY cantidad DESC;
+
+Ejemplo 3:
+Pregunta: ¿Qué canal tiene más ingresos?
+SQL: SELECT c.desc_canal, SUM(v.ingresos) AS total
+FROM ventas v
+JOIN tiendas t ON v.cod_tienda = t.cod_tienda
+JOIN canal c ON t.cod_canal = c.cod_canal
+GROUP BY c.desc_canal
+ORDER BY total DESC
+LIMIT 1;
+"""
+
 sql_prompt = PromptTemplate(
     input_variables=["pregunta"],
     template=f"""
@@ -96,16 +136,18 @@ Este es el esquema de la base de datos:
 
 {db_schema}
 
-Genera únicamente el código SQL correcto basado en el esquema anterior.
-No des explicaciones.
+A continuación algunos ejemplos para que aprendas cómo responder:
 
+{ejemplos}
+
+Ahora responde esta nueva pregunta:
 Pregunta: {{pregunta}}
 
 SQL:
 """
 )
 
-# LOG EN BASE DE DATOS
+# LOG DE INTERACCIONES EN BASE DE DATOS
 def log_interaction(pregunta, sql, resultado):
     try:
         conn = connect_db()
@@ -121,18 +163,17 @@ def log_interaction(pregunta, sql, resultado):
     except Exception as e:
         st.warning(f"⚠️ No se pudo guardar el log en la base de datos: {e}")
 
-# ENTRADA DEL USUARIO
+# ENTRADA
 pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
 
 if pregunta:
     st.markdown(f"**📝 Pregunta:** {pregunta}")
 
-    # Construir historial contextual
+    # Construcción del contexto con historial
     contexto = ""
     for i, (preg, sql) in enumerate(st.session_state["historial"][-5:]):
         contexto += f"Pregunta anterior: {preg}\nSQL generado: {sql}\n"
 
-    # Incluir nueva pregunta
     prompt_completo = f"""
 {contexto}
 Nueva pregunta: {pregunta}
@@ -141,16 +182,15 @@ Nueva pregunta: {pregunta}
     prompt = sql_prompt.format(pregunta=prompt_completo)
     sql_query = llm.predict(prompt).strip().strip("```sql").strip("```")
 
-    # Guardar en sesión
     st.session_state["historial"].append((pregunta, sql_query))
 
     st.markdown("🔍 **Consulta SQL Generada:**")
     st.code(sql_query, language="sql")
 
-    # Ejecutar si es segura
+    # CONECTAR Y EJECUTAR
     try:
         if not es_consulta_segura(sql_query):
-            st.error("❌ La consulta contiene comandos peligrosos y ha sido bloqueada.")
+            st.error("❌ La consulta generada contiene comandos peligrosos y no será ejecutada.")
             log_interaction(pregunta, sql_query, "Consulta bloqueada por seguridad")
         else:
             conn = connect_db()
@@ -169,33 +209,41 @@ Nueva pregunta: {pregunta}
 
             cursor.close()
             conn.close()
-            log_interaction(pregunta, sql_query, resultado_str)
 
+            st.markdown(f"**💬 Respuesta:** {resultado_str}")
+            log_interaction(pregunta, sql_query, resultado_str)
+            st.session_state["conversacion"].append({"pregunta": pregunta, "respuesta": resultado_str})
     except Exception as e:
         st.error(f"❌ Error al ejecutar la consulta: {e}")
         log_interaction(pregunta, sql_query, f"Error: {e}")
+        st.session_state["conversacion"].append({"pregunta": pregunta, "respuesta": str(e)})
 
-# HISTORIAL
+# DASHBOARD
 st.markdown("---")
-st.subheader("📊 Ver historial de consultas registradas")
+st.subheader("📈 Estadísticas de uso del asistente")
 
-if st.toggle("Mostrar historial de preguntas"):
+if st.toggle("📊 Mostrar dashboard de uso"):
     try:
         conn = connect_db()
-        df_logs = pd.read_sql("SELECT id, fecha, pregunta, sql_generado, resultado FROM chat_logs ORDER BY fecha DESC", conn)
+        df_stats = pd.read_sql("SELECT * FROM chat_logs", conn)
         conn.close()
 
-        st.dataframe(df_logs, use_container_width=True)
+        total_preguntas = len(df_stats)
+        errores = df_stats["resultado"].str.contains("error", case=False, na=False).sum()
+        ultima_fecha = df_stats["fecha"].max()
+        tipos = df_stats["sql_generado"].str.extract(r'^\s*(\w+)', expand=False).value_counts()
 
-        csv_logs = df_logs.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            label="📥 Descargar historial como CSV",
-            data=csv_logs,
-            file_name="historial_chat_logs.csv",
-            mime="text/csv"
-        )
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total de preguntas", total_preguntas)
+        col2.metric("Errores detectados", errores)
+        col3.metric("Último uso", ultima_fecha.strftime("%Y-%m-%d %H:%M:%S") if pd.notna(ultima_fecha) else "N/A")
+
+        st.markdown("#### 🔍 Distribución por tipo de consulta SQL")
+        st.bar_chart(tipos)
+
     except Exception as e:
-        st.error(f"Error al cargar logs desde la base de datos: {e}")
+        st.error(f"❌ No se pudieron cargar las métricas: {e}")
+
 
 
 # Revisar IP
