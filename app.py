@@ -142,7 +142,7 @@ st.markdown("🔍 **Consulta SQL Generada:**")
 st.code(sql_query, language="sql")
 
     # CONECTAR Y EJECUTAR
-    try:
+try:
         conn = connect_db()
         cursor = conn.cursor()
         cursor.execute(sql_query)
