@@ -169,7 +169,6 @@ pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
 if pregunta:
     st.markdown(f"**📝 Pregunta:** {pregunta}")
 
-    # Construcción del contexto con historial
     contexto = ""
     for i, (preg, sql) in enumerate(st.session_state["historial"][-5:]):
         contexto += f"Pregunta anterior: {preg}\nSQL generado: {sql}\n"
@@ -187,7 +186,6 @@ Nueva pregunta: {pregunta}
     st.markdown("🔍 **Consulta SQL Generada:**")
     st.code(sql_query, language="sql")
 
-    # CONECTAR Y EJECUTAR
     try:
         if not es_consulta_segura(sql_query):
             st.error("❌ La consulta generada contiene comandos peligrosos y no será ejecutada.")
@@ -213,6 +211,7 @@ Nueva pregunta: {pregunta}
             st.markdown(f"**💬 Respuesta:** {resultado_str}")
             log_interaction(pregunta, sql_query, resultado_str)
             st.session_state["conversacion"].append({"pregunta": pregunta, "respuesta": resultado_str})
+
     except Exception as e:
         st.error(f"❌ Error al ejecutar la consulta: {e}")
         log_interaction(pregunta, sql_query, f"Error: {e}")
@@ -243,6 +242,7 @@ if st.toggle("📊 Mostrar dashboard de uso"):
 
     except Exception as e:
         st.error(f"❌ No se pudieron cargar las métricas: {e}")
+
 
 
 
