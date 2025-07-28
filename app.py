@@ -167,3 +167,10 @@ if st.toggle("Mostrar historial de preguntas"):
         )
     except Exception as e:
         st.error(f"Error al cargar logs desde la base de datos: {e}")
+import requests
+
+try:
+    ip = requests.get("https://api64.ipify.org").text
+    st.markdown(f"🌐 **IP pública del servidor (Streamlit):** `{ip}`")
+except Exception as e:
+    st.warning(f"No se pudo obtener la IP pública: {e}")
