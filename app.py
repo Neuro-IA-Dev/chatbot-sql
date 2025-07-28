@@ -138,8 +138,8 @@ sql_query = llm.predict(prompt).strip().strip("```sql").strip("```")
 # Guardar en la sesión para futuras preguntas
 st.session_state["historial"].append((pregunta, sql_query))
 
-    st.markdown("🔍 **Consulta SQL Generada:**")
-    st.code(sql_query, language="sql")
+st.markdown("🔍 **Consulta SQL Generada:**")
+st.code(sql_query, language="sql")
 
     # CONECTAR Y EJECUTAR
     try:
