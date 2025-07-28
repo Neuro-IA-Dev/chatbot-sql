@@ -48,6 +48,11 @@ def connect_db():
         password="Pa$$w0rd_123",
         database="domolabs_Chatbot_SQL_DB"
     )
+# VALIDACIÓN DE CONSULTAS SQL
+def es_consulta_segura(sql):
+    sql = sql.lower()
+    comandos_peligrosos = ["drop", "delete", "truncate", "alter", "update", "insert", "--", "/*", "grant", "revoke"]
+    return not any(comando in sql for comando in comandos_peligrosos)
 
 # ESQUEMA DE LA BASE DE DATOS PARA EL PROMPT
 db_schema = """
@@ -181,10 +186,30 @@ Nueva pregunta: {pregunta}
     st.markdown("🔍 **Consulta SQL Generada:**")
     st.code(sql_query, language="sql")
 
-    try:
+    # CONECTAR Y EJECUTAR
+try:
+    if not es_consulta_segura(sql_query):
+        st.error("❌ La consulta generada contiene comandos peligrosos y no será ejecutada.")
+        log_interaction(pregunta, sql_query, "Consulta bloqueada por seguridad")
+    else:
         conn = connect_db()
         cursor = conn.cursor()
         cursor.execute(sql_query)
+
+        if sql_query.lower().startswith("select"):
+            columns = [col[0] for col in cursor.description]
+            results = cursor.fetchall()
+            df = pd.DataFrame(results, columns=columns)
+            st.dataframe(df)
+            resultado_str = f"{len(df)} filas"
+        else:
+            conn.commit()
+            resultado_str = "Consulta ejecutada correctamente."
+
+        cursor.close()
+        conn.close()
+        log_interaction(pregunta, sql_query, resultado_str)
+
 
         if sql_query.lower().startswith("select"):
             columns = [col[0] for col in cursor.description]
