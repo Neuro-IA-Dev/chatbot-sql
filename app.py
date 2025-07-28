@@ -145,4 +145,25 @@ if pregunta:
         st.error(f"❌ Error al ejecutar la consulta: {e}")
         log_interaction(pregunta, sql_query, f"Error: {e}")
 
+st.markdown("---")
+st.subheader("📊 Ver historial de consultas registradas")
 
+# Botón para mostrar u ocultar logs
+if st.toggle("Mostrar historial de preguntas"):
+    try:
+        conn = connect_db()
+        df_logs = pd.read_sql("SELECT id, fecha, pregunta, sql_generado, resultado FROM chat_logs ORDER BY fecha DESC", conn)
+        conn.close()
+
+        st.dataframe(df_logs, use_container_width=True)
+
+        # Botón de descarga
+        csv_logs = df_logs.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="📥 Descargar historial como CSV",
+            data=csv_logs,
+            file_name="historial_chat_logs.csv",
+            mime="text/csv"
+        )
+    except Exception as e:
+        st.error(f"Error al cargar logs desde la base de datos: {e}")
