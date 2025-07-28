@@ -91,15 +91,22 @@ SQL:
 """
 )
 
-# LOGGING LOCAL
-if not Path("chat_logs.csv").exists():
-    with open("chat_logs.csv", "w", encoding="utf-8") as f:
-        f.write("Pregunta,SQL,Resultado\n")
+
 
 def log_interaction(pregunta, sql, resultado):
-    with open("chat_logs.csv", "a", newline="", encoding="utf-8") as logfile:
-        writer = csv.writer(logfile)
-        writer.writerow([pregunta, sql, resultado])
+    try:
+        conn = connect_db()
+        cursor = conn.cursor()
+        insert_query = """
+            INSERT INTO chat_logs (pregunta, sql_generado, resultado)
+            VALUES (%s, %s, %s)
+        """
+        cursor.execute(insert_query, (pregunta, sql, resultado))
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        st.warning(f"⚠️ No se pudo guardar el log en la base de datos: {e}")
 
 # ENTRADA
 pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
@@ -138,12 +145,4 @@ if pregunta:
         st.error(f"❌ Error al ejecutar la consulta: {e}")
         log_interaction(pregunta, sql_query, f"Error: {e}")
 
-# DESCARGAR LOGS
-if Path("chat_logs.csv").exists():
-    with open("chat_logs.csv", "r", encoding="utf-8") as f:
-        st.download_button(
-            label="📥 Descargar logs",
-            data=f,
-            file_name="chat_logs.csv",
-            mime="text/csv"
-        )
+
