@@ -1,3 +1,4 @@
+
 # app.py
 
 import os
@@ -14,13 +15,17 @@ import csv
 st.set_page_config(page_title="Asistente Inteligente de NeuroVIA", page_icon="🧠")
 st.image("assets/logo_neurovia.png", width=180)
 st.title("🧠 Asistente Inteligente de Intanis/NeuroVIA")
+
 if st.button("🧹 Borrar historial de preguntas"):
     st.session_state["historial"] = []
     st.success("Historial de conversación borrado.")
+
 st.markdown("Haz una pregunta y el sistema generará y ejecutará una consulta SQL automáticamente.")
+
 # Inicializar historial en la sesión
 if "historial" not in st.session_state:
     st.session_state["historial"] = []
+
 # API OPENAI
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 llm = ChatOpenAI(temperature=0)
@@ -36,7 +41,7 @@ def connect_db():
     )
 
 # ESQUEMA DE LA BASE DE DATOS PARA EL PROMPT
-db_schema = """
+db_schema = """ 
 Base de datos: domolabs_Chatbot_SQL_DB
 
 Tablas y relaciones:
@@ -96,8 +101,7 @@ SQL:
 """
 )
 
-
-
+# FUNCION PARA LOG EN BASE DE DATOS
 def log_interaction(pregunta, sql, resultado):
     try:
         conn = connect_db()
@@ -119,30 +123,28 @@ pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
 if pregunta:
     st.markdown(f"**📝 Pregunta:** {pregunta}")
 
-    # GENERAR CONSULTA SQL
     # Construir contexto con historial
-contexto = ""
-for i, (preg, sql) in enumerate(st.session_state["historial"][-5:]):
-    contexto += f"Pregunta anterior: {preg}\nSQL generado: {sql}\n"
+    contexto = ""
+    for i, (preg, sql) in enumerate(st.session_state["historial"][-5:]):
+        contexto += f"Pregunta anterior: {preg}\nSQL generado: {sql}\n"
 
-# Agregar la nueva pregunta al prompt
-prompt_completo = f"""
+    prompt_completo = f"""
 {contexto}
 Nueva pregunta: {pregunta}
 """
 
-# Generar SQL
-prompt = sql_prompt.format(pregunta=prompt_completo)
-sql_query = llm.predict(prompt).strip().strip("```sql").strip("```")
+    # Generar SQL
+    prompt = sql_prompt.format(pregunta=prompt_completo)
+    sql_query = llm.predict(prompt).strip().strip("```sql").strip("```")
 
-# Guardar en la sesión para futuras preguntas
-st.session_state["historial"].append((pregunta, sql_query))
+    # Guardar en sesión
+    st.session_state["historial"].append((pregunta, sql_query))
 
-st.markdown("🔍 **Consulta SQL Generada:**")
-st.code(sql_query, language="sql")
+    st.markdown("🔍 **Consulta SQL Generada:**")
+    st.code(sql_query, language="sql")
 
     # CONECTAR Y EJECUTAR
-try:
+    try:
         conn = connect_db()
         cursor = conn.cursor()
         cursor.execute(sql_query)
@@ -157,11 +159,11 @@ try:
             conn.commit()
             resultado_str = "Consulta ejecutada correctamente."
 
-            cursor.close()
-            conn.close()
-            log_interaction(pregunta, sql_query, resultado_str)
+        cursor.close()
+        conn.close()
+        log_interaction(pregunta, sql_query, resultado_str)
 
-        except Exception as e:
+    except Exception as e:
         st.error(f"❌ Error al ejecutar la consulta: {e}")
         log_interaction(pregunta, sql_query, f"Error: {e}")
 
