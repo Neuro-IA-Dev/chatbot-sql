@@ -228,6 +228,29 @@ if st.toggle("Mostrar historial de preguntas"):
         )
     except Exception as e:
         st.error(f"Error al cargar logs desde la base de datos: {e}")
+st.markdown("---")
+st.subheader("📈 Estadísticas de uso del asistente")
+
+try:
+    conn = connect_db()
+    df_stats = pd.read_sql("SELECT * FROM chat_logs", conn)
+    conn.close()
+
+    total_preguntas = len(df_stats)
+    errores = df_stats["resultado"].str.contains("error", case=False, na=False).sum()
+    ultima_fecha = df_stats["fecha"].max()
+    tipos = df_stats["sql_generado"].str.extract(r'^\s*(\w+)', expand=False).value_counts()
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total de preguntas", total_preguntas)
+    col2.metric("Errores detectados", errores)
+    col3.metric("Último uso", ultima_fecha.strftime("%Y-%m-%d %H:%M:%S") if pd.notna(ultima_fecha) else "N/A")
+
+    st.markdown("#### 🔍 Distribución por tipo de consulta SQL")
+    st.bar_chart(tipos)
+
+except Exception as e:
+    st.error(f"❌ No se pudieron cargar las métricas: {e}")
 
 # Revisar IP
 #import requests
