@@ -1,4 +1,3 @@
-
 # app.py
 
 import os
@@ -18,6 +17,7 @@ st.title("🧠 Asistente Inteligente de Intanis/NeuroVIA")
 
 if st.button("🧹 Borrar historial de preguntas"):
     st.session_state["historial"] = []
+    st.session_state["conversacion"] = []
     st.success("Historial de conversación borrado.")
 
 st.markdown("Haz una pregunta y el sistema generará y ejecutará una consulta SQL automáticamente.")
@@ -25,6 +25,15 @@ st.markdown("Haz una pregunta y el sistema generará y ejecutará una consulta S
 # Inicializar historial en la sesión
 if "historial" not in st.session_state:
     st.session_state["historial"] = []
+
+if "conversacion" not in st.session_state:
+    st.session_state["conversacion"] = []
+
+# Mostrar historial conversacional
+for entrada in st.session_state["conversacion"]:
+    st.markdown(f"**🧠 Pregunta:** {entrada['pregunta']}")
+    st.markdown(f"**💬 Respuesta:** {entrada['respuesta']}")
+    st.markdown("---")
 
 # API OPENAI
 openai.api_key = st.secrets["OPENAI_API_KEY"]
@@ -41,7 +50,7 @@ def connect_db():
     )
 
 # ESQUEMA DE LA BASE DE DATOS PARA EL PROMPT
-db_schema = """ 
+db_schema = """
 Base de datos: domolabs_Chatbot_SQL_DB
 
 Tablas y relaciones:
@@ -101,7 +110,7 @@ SQL:
 """
 )
 
-# FUNCION PARA LOG EN BASE DE DATOS
+# LOG DE INTERACCIONES EN BASE DE DATOS
 def log_interaction(pregunta, sql, resultado):
     try:
         conn = connect_db()
@@ -123,7 +132,7 @@ pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
 if pregunta:
     st.markdown(f"**📝 Pregunta:** {pregunta}")
 
-    # Construir contexto con historial
+    # Construcción del contexto con historial
     contexto = ""
     for i, (preg, sql) in enumerate(st.session_state["historial"][-5:]):
         contexto += f"Pregunta anterior: {preg}\nSQL generado: {sql}\n"
@@ -133,17 +142,14 @@ if pregunta:
 Nueva pregunta: {pregunta}
 """
 
-    # Generar SQL
     prompt = sql_prompt.format(pregunta=prompt_completo)
     sql_query = llm.predict(prompt).strip().strip("```sql").strip("```")
 
-    # Guardar en sesión
     st.session_state["historial"].append((pregunta, sql_query))
 
     st.markdown("🔍 **Consulta SQL Generada:**")
     st.code(sql_query, language="sql")
 
-    # CONECTAR Y EJECUTAR
     try:
         conn = connect_db()
         cursor = conn.cursor()
@@ -161,16 +167,19 @@ Nueva pregunta: {pregunta}
 
         cursor.close()
         conn.close()
+
+        st.markdown(f"**💬 Respuesta:** {resultado_str}")
         log_interaction(pregunta, sql_query, resultado_str)
+        st.session_state["conversacion"].append({"pregunta": pregunta, "respuesta": resultado_str})
 
     except Exception as e:
         st.error(f"❌ Error al ejecutar la consulta: {e}")
         log_interaction(pregunta, sql_query, f"Error: {e}")
+        st.session_state["conversacion"].append({"pregunta": pregunta, "respuesta": str(e)})
 
 st.markdown("---")
 st.subheader("📊 Ver historial de consultas registradas")
 
-# Botón para mostrar u ocultar logs
 if st.toggle("Mostrar historial de preguntas"):
     try:
         conn = connect_db()
@@ -179,7 +188,6 @@ if st.toggle("Mostrar historial de preguntas"):
 
         st.dataframe(df_logs, use_container_width=True)
 
-        # Botón de descarga
         csv_logs = df_logs.to_csv(index=False).encode("utf-8")
         st.download_button(
             label="📥 Descargar historial como CSV",
@@ -189,6 +197,7 @@ if st.toggle("Mostrar historial de preguntas"):
         )
     except Exception as e:
         st.error(f"Error al cargar logs desde la base de datos: {e}")
+
 # Revisar IP
 #import requests
 
