@@ -157,11 +157,11 @@ try:
             conn.commit()
             resultado_str = "Consulta ejecutada correctamente."
 
-        cursor.close()
-        conn.close()
-        log_interaction(pregunta, sql_query, resultado_str)
+            cursor.close()
+            conn.close()
+            log_interaction(pregunta, sql_query, resultado_str)
 
-         except Exception as e:
+        except Exception as e:
         st.error(f"❌ Error al ejecutar la consulta: {e}")
         log_interaction(pregunta, sql_query, f"Error: {e}")
 
