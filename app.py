@@ -93,6 +93,35 @@ Relaciones clave:
 """
 
 # PROMPT PERSONALIZADO CON ESQUEMA
+ejemplos = """
+Ejemplo 1:
+Pregunta: ¿Cuál es la tienda que más ha vendido?
+SQL: SELECT t.desc_tienda, SUM(v.ingresos) AS total_ventas
+FROM ventas v
+JOIN tiendas t ON v.cod_tienda = t.cod_tienda
+GROUP BY t.desc_tienda
+ORDER BY total_ventas DESC
+LIMIT 1;
+
+Ejemplo 2:
+Pregunta: ¿Cuáles son los artículos más vendidos?
+SQL: SELECT a.desc_articulo, COUNT(*) AS cantidad
+FROM ventas v
+JOIN articulos a ON v.cod_articulo = a.cod_articulo
+GROUP BY a.desc_articulo
+ORDER BY cantidad DESC;
+
+Ejemplo 3:
+Pregunta: ¿Qué canal tiene más ingresos?
+SQL: SELECT c.desc_canal, SUM(v.ingresos) AS total
+FROM ventas v
+JOIN tiendas t ON v.cod_tienda = t.cod_tienda
+JOIN canal c ON t.cod_canal = c.cod_canal
+GROUP BY c.desc_canal
+ORDER BY total DESC
+LIMIT 1;
+"""
+
 sql_prompt = PromptTemplate(
     input_variables=["pregunta"],
     template=f"""
@@ -101,9 +130,11 @@ Este es el esquema de la base de datos:
 
 {db_schema}
 
-Genera únicamente el código SQL correcto basado en el esquema anterior.
-No des explicaciones.
+A continuación algunos ejemplos para que aprendas cómo responder:
 
+{ejemplos}
+
+Ahora responde esta nueva pregunta:
 Pregunta: {{pregunta}}
 
 SQL:
