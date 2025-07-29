@@ -235,16 +235,15 @@ if pregunta:
 Nueva pregunta: {pregunta}
 """
 
-    sql_query = buscar_sql_en_cache(pregunta)
-    if sql_query:
+sql_query = buscar_sql_en_cache(pregunta)
+if sql_query:
     st.info("🔁 Se reutilizó una consulta SQL previamente generada por similitud semántica.")
-    else:
+else:
     prompt = sql_prompt.format(pregunta=prompt_completo)
     sql_query = llm.predict(prompt).strip().strip("```sql").strip("```")
     embedding = obtener_embedding(pregunta)
     if embedding:
         guardar_en_cache(pregunta, sql_query, embedding)
-
     st.session_state["historial"].append((pregunta, sql_query))
 
     st.markdown("🔍 **Consulta SQL Generada:**")
