@@ -40,7 +40,7 @@ for entrada in st.session_state["conversacion"]:
     st.markdown("---")
 
 # API OPENAI
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+#openai.api_key = st.secrets["OPENAI_API_KEY"]
 llm = ChatOpenAI(temperature=0)
 
 # CONEXIÓN A MySQL
