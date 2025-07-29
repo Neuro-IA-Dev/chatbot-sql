@@ -11,6 +11,7 @@ import mysql.connector
 import pandas as pd
 from langchain.chat_models import ChatOpenAI
 from langchain.prompts import PromptTemplate
+from openai import OpenAI
 from pathlib import Path
 import csv
 
@@ -174,13 +175,16 @@ def log_interaction(pregunta, sql, resultado):
         st.warning(f"⚠️ No se pudo guardar el log en la base de datos: {e}")
 # SEMANTIC CACHE
 
+from openai import OpenAI
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
 def obtener_embedding(texto):
     try:
-        response = openai.Embedding.create(
+        response = client.embeddings.create(
             input=[texto],
             model="text-embedding-3-small"
         )
-        return response["data"][0]["embedding"]
+        return response.data[0].embedding
     except Exception as e:
         st.warning(f"Error al obtener embedding: {e}")
         return None
