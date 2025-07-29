@@ -13,7 +13,7 @@ langchain-openai>=0.0.5
 
 # Cliente oficial de OpenAI
 openai>=1.0.0
-
+pip install --upgrade openai
 # Cargadores de documentos, PDF y otros
 pypdf
 python-docx
