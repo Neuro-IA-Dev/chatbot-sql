@@ -161,10 +161,10 @@ def log_interaction(pregunta, sql, resultado):
         conn = connect_db()
         cursor = conn.cursor()
         insert_query = """
-            INSERT INTO chat_logs (, sql_generado, resultado)
+            INSERT INTO chat_logs (pregunta, sql_generado, resultado)
             VALUES (%s, %s, %s)
         """
-        cursor.execute(insert_query, (, sql, resultado))
+        cursor.execute(insert_query, (pregunta, sql, resultado))
         conn.commit()
         cursor.close()
         conn.close()
@@ -172,7 +172,7 @@ def log_interaction(pregunta, sql, resultado):
         st.warning(f"⚠️ No se pudo guardar el log en la base de datos: {e}")
 
 # ENTRADA
- = st.chat_input("🧠  en lenguaje natural")
+ = st.chat_input("🧠 pregunta en lenguaje natural")
 
 if pregunta:
     st.markdown(f"**📝 Pregunta:** {pregunta}")
