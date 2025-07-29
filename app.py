@@ -172,7 +172,7 @@ def log_interaction(pregunta, sql, resultado):
         st.warning(f"⚠️ No se pudo guardar el log en la base de datos: {e}")
 
 # ENTRADA
- = st.chat_input("🧠 pregunta en lenguaje natural")
+ = st.chat_input("🧠 en lenguaje natural")
 
 if pregunta:
     st.markdown(f"**📝 Pregunta:** {pregunta}")
