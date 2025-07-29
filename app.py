@@ -236,9 +236,9 @@ Nueva pregunta: {pregunta}
 """
 
     sql_query = buscar_sql_en_cache(pregunta)
-if sql_query:
+    if sql_query:
     st.info("🔁 Se reutilizó una consulta SQL previamente generada por similitud semántica.")
-else:
+    else:
     prompt = sql_prompt.format(pregunta=prompt_completo)
     sql_query = llm.predict(prompt).strip().strip("```sql").strip("```")
     embedding = obtener_embedding(pregunta)
