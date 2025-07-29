@@ -170,7 +170,56 @@ def log_interaction(pregunta, sql, resultado):
         conn.close()
     except Exception as e:
         st.warning(f"⚠️ No se pudo guardar el log en la base de datos: {e}")
+# SEMANTIC CACHE
 
+def obtener_embedding(texto):
+    try:
+        response = openai.Embedding.create(
+            input=[texto],
+            model="text-embedding-3-small"
+        )
+        return response["data"][0]["embedding"]
+    except Exception as e:
+        st.warning(f"Error al obtener embedding: {e}")
+        return None
+
+def guardar_en_cache(pregunta, sql_generado, embedding):
+    try:
+        conn = connect_db()
+        cursor = conn.cursor()
+        query = "INSERT INTO semantic_cache (pregunta, embedding, sql_generado) VALUES (%s, %s, %s)"
+        cursor.execute(query, (pregunta, json.dumps(embedding), sql_generado))
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        st.warning(f"No se pudo guardar en el semantic cache: {e}")
+
+def buscar_sql_en_cache(pregunta_nueva, umbral_similitud=0.90):
+    try:
+        embedding_nuevo = np.array(obtener_embedding(pregunta_nueva))
+        if embedding_nuevo is None:
+            return None
+
+        conn = connect_db()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT pregunta, embedding, sql_generado FROM semantic_cache")
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        for row in rows:
+            embedding_guardado = np.array(json.loads(row["embedding"]))
+            similitud = np.dot(embedding_nuevo, embedding_guardado) / (
+                np.linalg.norm(embedding_nuevo) * np.linalg.norm(embedding_guardado)
+            )
+            if similitud >= umbral_similitud:
+                return row["sql_generado"]
+
+        return None
+    except Exception as e:
+        st.warning(f"Error al buscar en el semantic cache: {e}")
+        return None
 # ENTRADA
 pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
 
