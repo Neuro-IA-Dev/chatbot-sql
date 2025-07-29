@@ -5,7 +5,6 @@ import json
 import numpy as np
 import datetime
 import requests
-import openai
 import streamlit as st
 import mysql.connector
 import pandas as pd
@@ -184,11 +183,11 @@ def obtener_embedding(texto):
         return None
 
     try:
-        response = openai.Embedding.create(
+        response = client.embeddings.create(
             input=[texto],
             model="text-embedding-3-small"
         )
-        return response["data"][0]["embedding"]
+        return response.data[0].embedding
     except Exception as e:
         st.warning(f"Error al obtener embedding: {e}")
         return None
