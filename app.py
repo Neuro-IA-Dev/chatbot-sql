@@ -179,12 +179,16 @@ from openai import OpenAI
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 def obtener_embedding(texto):
+    if not texto or not texto.strip():
+        st.warning("❌ El texto para obtener embedding está vacío.")
+        return None
+
     try:
-        response = client.embeddings.create(
+        response = openai.Embedding.create(
             input=[texto],
             model="text-embedding-3-small"
         )
-        return response.data[0].embedding
+        return response["data"][0]["embedding"]
     except Exception as e:
         st.warning(f"Error al obtener embedding: {e}")
         return None
@@ -203,9 +207,11 @@ def guardar_en_cache(pregunta, sql_generado, embedding):
 
 def buscar_sql_en_cache(pregunta_nueva, umbral_similitud=0.90):
     try:
-        embedding_nuevo = np.array(obtener_embedding(pregunta_nueva))
+        embedding_nuevo = obtener_embedding(pregunta_nueva)
         if embedding_nuevo is None:
             return None
+
+        embedding_nuevo = np.array(embedding_nuevo)
 
         conn = connect_db()
         cursor = conn.cursor(dictionary=True)
@@ -215,13 +221,24 @@ def buscar_sql_en_cache(pregunta_nueva, umbral_similitud=0.90):
         conn.close()
 
         for row in rows:
-            embedding_guardado = np.array(json.loads(row["embedding"]))
-            similitud = np.dot(embedding_nuevo, embedding_guardado) / (
-                np.linalg.norm(embedding_nuevo) * np.linalg.norm(embedding_guardado)
-            )
-            if similitud >= umbral_similitud:
-                return row["sql_generado"]
+            try:
+                embedding_guardado = json.loads(row["embedding"])
+                if embedding_guardado is None:
+                    continue
 
+                embedding_guardado = np.array(embedding_guardado)
+                similitud = np.dot(embedding_nuevo, embedding_guardado) / (
+                    np.linalg.norm(embedding_nuevo) * np.linalg.norm(embedding_guardado)
+                )
+
+                if similitud >= umbral_similitud:
+                    return row["sql_generado"]
+            except Exception as e:
+                st.warning(f"Error comparando embeddings: {e}")
+
+        return None
+    except Exception as e:
+        st.warning(f"Error al buscar en el semantic cache: {e}")
         return None
     except Exception as e:
         st.warning(f"Error al buscar en el semantic cache: {e}")
