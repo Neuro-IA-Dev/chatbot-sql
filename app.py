@@ -22,7 +22,7 @@ if st.button("🧹 Borrar historial de preguntas", key="btn_borrar_historial"):
     st.session_state["conversacion"] = []
     st.success("Historial de conversación borrado.")
 
-st.markdown("Haz una pregunta y el sistema generará y ejecutará una consulta SQL automáticamente.")
+st.markdown("Haz una  y el sistema generará y ejecutará una consulta SQL automáticamente.")
 
 # Inicializar historial en la sesión
 if "historial" not in st.session_state:
@@ -33,7 +33,7 @@ if "conversacion" not in st.session_state:
 
 # Mostrar historial conversacional
 for entrada in st.session_state["conversacion"]:
-    st.markdown(f"**🧠 Pregunta:** {entrada['pregunta']}")
+    st.markdown(f"**🧠 :** {entrada['']}")
     st.markdown(f"**💬 Respuesta:** {entrada['respuesta']}")
     st.markdown("---")
 
@@ -103,7 +103,7 @@ Relaciones clave:
 # PROMPT PERSONALIZADO CON EJEMPLOS
 ejemplos = """
 Ejemplo 1:
-Pregunta: ¿Cuál es la tienda que más ha vendido?
+: ¿Cuál es la tienda que más ha vendido?
 SQL: SELECT t.desc_tienda, SUM(v.ingresos) AS total_ventas
 FROM ventas v
 JOIN tiendas t ON v.cod_tienda = t.cod_tienda
@@ -112,7 +112,7 @@ ORDER BY total_ventas DESC
 LIMIT 1;
 
 Ejemplo 2:
-Pregunta: ¿Cuáles son los artículos más vendidos?
+: ¿Cuáles son los artículos más vendidos?
 SQL: SELECT a.desc_articulo, COUNT(*) AS cantidad
 FROM ventas v
 JOIN articulos a ON v.cod_articulo = a.cod_articulo
@@ -120,7 +120,7 @@ GROUP BY a.desc_articulo
 ORDER BY cantidad DESC;
 
 Ejemplo 3:
-Pregunta: ¿Qué canal tiene más ingresos?
+: ¿Qué canal tiene más ingresos?
 SQL: SELECT c.desc_canal, SUM(v.ingresos) AS total
 FROM ventas v
 JOIN tiendas t ON v.cod_tienda = t.cod_tienda
@@ -131,7 +131,7 @@ LIMIT 1;
 """
 
 sql_prompt = PromptTemplate(
-    input_variables=["pregunta"],
+    input_variables=[""],
     template=f"""
 Eres un asistente experto en SQL para una base de datos MySQL.
 Considera que los usuarios pueden referirse a los locales y marcas de forma informal o parcial (por ejemplo, "Levis Rancagua" puede referirse a "Local MM OUTLET RANCAGUA" cuya marca es Levis).
@@ -148,23 +148,23 @@ A continuación algunos ejemplos para que aprendas cómo responder:
 
 {ejemplos}
 
-Ahora responde esta nueva pregunta:
-Pregunta: {{pregunta}}
+Ahora responde esta nueva :
+: {{}}
 
 SQL:
 """
 )
 
 # LOG DE INTERACCIONES EN BASE DE DATOS
-def log_interaction(pregunta, sql, resultado):
+def log_interaction(, sql, resultado):
     try:
         conn = connect_db()
         cursor = conn.cursor()
         insert_query = """
-            INSERT INTO chat_logs (pregunta, sql_generado, resultado)
+            INSERT INTO chat_logs (, sql_generado, resultado)
             VALUES (%s, %s, %s)
         """
-        cursor.execute(insert_query, (pregunta, sql, resultado))
+        cursor.execute(insert_query, (, sql, resultado))
         conn.commit()
         cursor.close()
         conn.close()
@@ -172,22 +172,26 @@ def log_interaction(pregunta, sql, resultado):
         st.warning(f"⚠️ No se pudo guardar el log en la base de datos: {e}")
 
 # ENTRADA
-pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
+ = st.chat_input("🧠  en lenguaje natural")
 
 if pregunta:
     st.markdown(f"**📝 Pregunta:** {pregunta}")
 
-    contexto = ""
-    for i, (preg, sql) in enumerate(st.session_state["historial"][-5:]):
-        contexto += f"Pregunta anterior: {preg}\nSQL generado: {sql}\n"
+    sql_query = buscar_sql_en_cache(pregunta)
+    if sql_query:
+        st.info("🔁 Se reutilizó una consulta SQL previamente generada por similitud semántica.")
+    else:
+        contexto = ""
+        for i, (preg, sql) in enumerate(st.session_state["historial"][-5:]):
+            contexto += f"Pregunta anterior: {preg}\nSQL generado: {sql}\n"
 
-    prompt_completo = f"""
-{contexto}
-Nueva pregunta: {pregunta}
-"""
+        prompt_completo = f"{contexto}\nNueva pregunta: {pregunta}"
+        prompt = sql_prompt.format(pregunta=prompt_completo)
+        sql_query = llm.predict(prompt).strip().strip("```sql").strip("```")
 
-    prompt = sql_prompt.format(pregunta=prompt_completo)
-    sql_query = llm.predict(prompt).strip().strip("```sql").strip("```")
+        embedding = obtener_embedding(pregunta)
+        if embedding:
+            guardar_en_cache(pregunta, sql_query, embedding)
 
     st.session_state["historial"].append((pregunta, sql_query))
 
