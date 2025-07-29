@@ -253,16 +253,11 @@ if pregunta:
     for i, (preg, sql) in enumerate(st.session_state["historial"][-5:]):
         contexto += f"Pregunta anterior: {preg}\nSQL generado: {sql}\n"
 
-    prompt_completo = f"""
-{contexto}
-Nueva pregunta: {pregunta}
-"""
-
-sql_query = buscar_sql_en_cache(pregunta)
+    prompt = sql_prompt.format_prompt(pregunta=pregunta).to_string()
 if sql_query:
     st.info("🔁 Se reutilizó una consulta SQL previamente generada por similitud semántica.")
 else:
-    prompt = sql_prompt.format(pregunta=prompt_completo)
+    prompt = sql_prompt.format_prompt(pregunta=pregunta).to_string()
     sql_query = llm.predict(prompt).strip().strip("```sql").strip("```")
     embedding = obtener_embedding(pregunta)
     if embedding:
