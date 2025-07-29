@@ -156,7 +156,7 @@ SQL:
 )
 
 # LOG DE INTERACCIONES EN BASE DE DATOS
-def log_interaction(, sql, resultado):
+def log_interaction(pregunta, sql, resultado):
     try:
         conn = connect_db()
         cursor = conn.cursor()
