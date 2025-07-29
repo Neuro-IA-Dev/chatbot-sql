@@ -22,7 +22,7 @@ if st.button("🧹 Borrar historial de preguntas", key="btn_borrar_historial"):
     st.session_state["conversacion"] = []
     st.success("Historial de conversación borrado.")
 
-st.markdown("Haz una  y el sistema generará y ejecutará una consulta SQL automáticamente.")
+st.markdown("Haz una pregunta y el sistema generará y ejecutará una consulta SQL automáticamente.")
 
 # Inicializar historial en la sesión
 if "historial" not in st.session_state:
@@ -33,7 +33,7 @@ if "conversacion" not in st.session_state:
 
 # Mostrar historial conversacional
 for entrada in st.session_state["conversacion"]:
-    st.markdown(f"**🧠 :** {entrada['']}")
+    st.markdown(f"**🧠 Pregunta:** {entrada['pregunta']}")
     st.markdown(f"**💬 Respuesta:** {entrada['respuesta']}")
     st.markdown("---")
 
@@ -103,7 +103,7 @@ Relaciones clave:
 # PROMPT PERSONALIZADO CON EJEMPLOS
 ejemplos = """
 Ejemplo 1:
-: ¿Cuál es la tienda que más ha vendido?
+Pregunta: ¿Cuál es la tienda que más ha vendido?
 SQL: SELECT t.desc_tienda, SUM(v.ingresos) AS total_ventas
 FROM ventas v
 JOIN tiendas t ON v.cod_tienda = t.cod_tienda
@@ -112,7 +112,7 @@ ORDER BY total_ventas DESC
 LIMIT 1;
 
 Ejemplo 2:
-: ¿Cuáles son los artículos más vendidos?
+Pregunta: ¿Cuáles son los artículos más vendidos?
 SQL: SELECT a.desc_articulo, COUNT(*) AS cantidad
 FROM ventas v
 JOIN articulos a ON v.cod_articulo = a.cod_articulo
@@ -120,7 +120,7 @@ GROUP BY a.desc_articulo
 ORDER BY cantidad DESC;
 
 Ejemplo 3:
-: ¿Qué canal tiene más ingresos?
+Pregunta: ¿Qué canal tiene más ingresos?
 SQL: SELECT c.desc_canal, SUM(v.ingresos) AS total
 FROM ventas v
 JOIN tiendas t ON v.cod_tienda = t.cod_tienda
@@ -131,7 +131,7 @@ LIMIT 1;
 """
 
 sql_prompt = PromptTemplate(
-    input_variables=[""],
+    input_variables=["pregunta"],
     template=f"""
 Eres un asistente experto en SQL para una base de datos MySQL.
 Considera que los usuarios pueden referirse a los locales y marcas de forma informal o parcial (por ejemplo, "Levis Rancagua" puede referirse a "Local MM OUTLET RANCAGUA" cuya marca es Levis).
@@ -148,8 +148,8 @@ A continuación algunos ejemplos para que aprendas cómo responder:
 
 {ejemplos}
 
-Ahora responde esta nueva :
-: {{}}
+Ahora responde esta nueva pregunta:
+Pregunta: {{pregunta}}
 
 SQL:
 """
@@ -172,26 +172,22 @@ def log_interaction(pregunta, sql, resultado):
         st.warning(f"⚠️ No se pudo guardar el log en la base de datos: {e}")
 
 # ENTRADA
- = st.chat_input("🧠 en lenguaje natural")
+pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
 
 if pregunta:
     st.markdown(f"**📝 Pregunta:** {pregunta}")
 
-    sql_query = buscar_sql_en_cache(pregunta)
-    if sql_query:
-        st.info("🔁 Se reutilizó una consulta SQL previamente generada por similitud semántica.")
-    else:
-        contexto = ""
-        for i, (preg, sql) in enumerate(st.session_state["historial"][-5:]):
-            contexto += f"Pregunta anterior: {preg}\nSQL generado: {sql}\n"
+    contexto = ""
+    for i, (preg, sql) in enumerate(st.session_state["historial"][-5:]):
+        contexto += f"Pregunta anterior: {preg}\nSQL generado: {sql}\n"
 
-        prompt_completo = f"{contexto}\nNueva pregunta: {pregunta}"
-        prompt = sql_prompt.format(pregunta=prompt_completo)
-        sql_query = llm.predict(prompt).strip().strip("```sql").strip("```")
+    prompt_completo = f"""
+{contexto}
+Nueva pregunta: {pregunta}
+"""
 
-        embedding = obtener_embedding(pregunta)
-        if embedding:
-            guardar_en_cache(pregunta, sql_query, embedding)
+    prompt = sql_prompt.format(pregunta=prompt_completo)
+    sql_query = llm.predict(prompt).strip().strip("```sql").strip("```")
 
     st.session_state["historial"].append((pregunta, sql_query))
 
@@ -307,16 +303,6 @@ if st.toggle("💰 Ver costo acumulado en OpenAI", key="toggle_costos_openai"):
         consumo = obtener_consumo_openai(st.secrets["OPENAI_API_KEY"])
         st.metric("Consumo actual OpenAI (mes)", f"${consumo}")
 
-
-
-# Revisar IP
-#import requests
-
-#try:
- #   ip = requests.get("https://api64.ipify.org").text
-  #  st.markdown(f"🌐 **IP pública del servidor (Streamlit):** `{ip}`")
-#except Exception as e:
- #   st.warning(f"No se pudo obtener la IP pública: {e}")
 
 
 # Revisar IP
