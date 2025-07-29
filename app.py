@@ -134,6 +134,12 @@ sql_prompt = PromptTemplate(
     input_variables=["pregunta"],
     template=f"""
 Eres un asistente experto en SQL para una base de datos MySQL.
+Considera que los usuarios pueden referirse a los locales y marcas de forma informal o parcial (por ejemplo, "Levis Rancagua" puede referirse a "Local MM OUTLET RANCAGUA" cuya marca es Levis).
+
+**Tu tarea:**
+- Interpreta bien los nombres aproximados.
+- Usa condiciones SQL como `LIKE '%RANCAGUA%'` o `LIKE '%LEVIS%'`.
+- No inventes datos.
 Este es el esquema de la base de datos:
 
 {db_schema}
