@@ -17,7 +17,7 @@ st.set_page_config(page_title="Asistente Inteligente de NeuroVIA", page_icon="�
 st.image("assets/logo_neurovia.png", width=180)
 st.title("🧠 Asistente Inteligente de Intanis/NeuroVIA")
 
-if st.button("🧹 Borrar historial de preguntas"):
+if st.button("🧹 Borrar historial de preguntas", key="btn_borrar_historial"):
     st.session_state["historial"] = []
     st.session_state["conversacion"] = []
     st.success("Historial de conversación borrado.")
@@ -218,11 +218,12 @@ Nueva pregunta: {pregunta}
         st.error(f"❌ Error al ejecutar la consulta: {e}")
         log_interaction(pregunta, sql_query, f"Error: {e}")
         st.session_state["conversacion"].append({"pregunta": pregunta, "respuesta": str(e)})
+
 # 🔄 VER HISTORIAL DE PREGUNTAS
 st.markdown("---")
 st.subheader("📚 Historial de consultas anteriores")
 
-if st.toggle("📋 Mostrar historial de preguntas"):
+if st.toggle("📋 Mostrar historial de preguntas", key="toggle_historial"):
     try:
         conn = connect_db()
         df_logs = pd.read_sql("SELECT id, fecha, pregunta, sql_generado, resultado FROM chat_logs ORDER BY fecha DESC", conn)
@@ -230,7 +231,6 @@ if st.toggle("📋 Mostrar historial de preguntas"):
 
         st.dataframe(df_logs, use_container_width=True)
 
-        # Botón de descarga
         csv_logs = df_logs.to_csv(index=False).encode("utf-8")
         st.download_button(
             label="📥 Descargar historial como CSV",
@@ -245,7 +245,7 @@ if st.toggle("📋 Mostrar historial de preguntas"):
 st.markdown("---")
 st.subheader("📈 Estadísticas de uso del asistente")
 
-if st.toggle("📊 Mostrar dashboard de uso"):
+if st.toggle("📊 Mostrar dashboard de uso", key="toggle_dashboard"):
     try:
         conn = connect_db()
         df_stats = pd.read_sql("SELECT * FROM chat_logs", conn)
@@ -267,32 +267,7 @@ if st.toggle("📊 Mostrar dashboard de uso"):
     except Exception as e:
         st.error(f"❌ No se pudieron cargar las métricas: {e}")
 
-# --- MONITOREO DE COSTOS OPENAI ---
-def obtener_consumo_openai(api_key):
-    try:
-        headers = {"Authorization": f"Bearer {api_key}"}
-        hoy = datetime.date.today()
-        inicio_mes = hoy.replace(day=1)
-        url = f"https://api.openai.com/v1/dashboard/billing/usage?start_date={inicio_mes}&end_date={hoy}"
-        response = requests.get(url, headers=headers)
-
-        if response.status_code == 200:
-            data = response.json()
-            usd = data.get("total_usage", 0) / 100  # en centavos
-            return round(usd, 2)
-        else:
-            return f"Error {response.status_code}"
-    except Exception as e:
-        return f"Error: {e}"
-
-if st.toggle("💰 Ver costo acumulado en OpenAI"):
-    with st.spinner("Consultando consumo..."):
-        consumo = obtener_consumo_openai(st.secrets["OPENAI_API_KEY"])
-        st.metric("Consumo actual OpenAI (mes)", f"${consumo}")
-
-
-
-# --- MONITOREO DE COSTOS OPENAI ---
+# MONITOREO DE COSTOS OPENAI
 def obtener_consumo_openai(api_key):
     try:
         hoy = datetime.date.today()
@@ -301,32 +276,26 @@ def obtener_consumo_openai(api_key):
 
         headers = {
             "Authorization": f"Bearer {api_key}"
-            # Si tu cuenta usa organización, descomenta esta línea y reemplaza con tu ID:
-            # "OpenAI-Organization": "org-xxxxxxxx"
         }
 
         response = requests.get(url, headers=headers)
 
         if response.status_code == 200:
             data = response.json()
-            usd = data.get("total_usage", 0) / 100  # OpenAI entrega en centavos
+            usd = data.get("total_usage", 0) / 100
             return round(usd, 2)
-
         elif response.status_code == 401:
             return "❌ Error 401: API Key inválida o sin permisos de uso"
-
         else:
             return f"❌ Error {response.status_code}: {response.text}"
 
     except Exception as e:
         return f"❌ Excepción: {e}"
 
-if st.toggle("💰 Ver costo acumulado en OpenAI"):
+if st.toggle("💰 Ver costo acumulado en OpenAI", key="toggle_costos_openai"):
     with st.spinner("Consultando consumo..."):
         consumo = obtener_consumo_openai(st.secrets["OPENAI_API_KEY"])
-        st.metric("Consumo actual OpenAI (mes)", f"{consumo}")
-
-
+        st.metric("Consumo actual OpenAI (mes)", f"${consumo}")
 
 
 
