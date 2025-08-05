@@ -1,6 +1,3 @@
-
-# app_corregido.py
-
 import os
 import json
 import numpy as np
@@ -16,9 +13,9 @@ from openai import OpenAI
 # CONFIG STREAMLIT
 st.set_page_config(page_title="Asistente Inteligente de NeuroVIA", page_icon="🧠")
 st.image("assets/logo_neurovia.png", width=180)
-st.title("🧠 Asistente Inteligente de Intanis/NeuroVIA")
+st.title(":brain: Asistente Inteligente de Intanis/NeuroVIA")
 
-if st.button("🧹 Borrar historial de preguntas", key="btn_borrar_historial"):
+if st.button("\U0001f9f9 Borrar historial de preguntas", key="btn_borrar_historial"):
     st.session_state["historial"] = []
     st.session_state["conversacion"] = []
     st.success("Historial de conversación borrado.")
@@ -30,13 +27,9 @@ if "historial" not in st.session_state:
 if "conversacion" not in st.session_state:
     st.session_state["conversacion"] = []
 
-for entrada in st.session_state["conversacion"]:
-    st.markdown(f"**🧠 Pregunta:** {entrada['pregunta']}")
-    st.markdown(f"**💬 Respuesta:** {entrada['respuesta']}")
-    st.markdown("---")
-
 llm = ChatOpenAI(temperature=0)
 
+# CONEXIÓN A BASE DE DATOS
 def connect_db():
     return mysql.connector.connect(
         host="s1355.use1.mysecurecloudhost.com",
@@ -51,7 +44,7 @@ def es_consulta_segura(sql):
     comandos_peligrosos = ["drop", "delete", "truncate", "alter", "update", "insert", "--", "/*", "grant", "revoke"]
     return not any(comando in sql for comando in comandos_peligrosos)
 
-# PROMPT SQL
+# PROMPT
 sql_prompt = PromptTemplate(
     input_variables=["pregunta"],
     template="""
@@ -71,7 +64,6 @@ La tabla VENTAS contiene información histórica de ventas, productos, tiendas, 
    Cuando el usuario mencione nombres de ciudades, centros comerciales u otros lugares (por ejemplo: "Costanera", "Talca", "Plaza Vespucio"), **búscalos en `DESC_TIENDA`**.
 
    Cuando filtres por estos campos descriptivos (`DESC_...`), usa SIEMPRE la cláusula `LIKE '%valor%'` en lugar de `=`, para permitir coincidencias parciales o mayúsculas/minúsculas.
-
 
 2. Si el usuario pide:
    - "¿Cuántas tiendas?" o "total de tiendas": usa COUNT(DISTINCT DESC_TIENDA)
@@ -102,12 +94,16 @@ Pregunta: {pregunta}
 """
 )
 
-def log_interaction(pregunta, sql, resultado):
+# LOGGING Y FEEDBACK
+def log_interaction(pregunta, sql, resultado, feedback=None):
     try:
         conn = connect_db()
         cursor = conn.cursor()
-        query = "INSERT INTO chat_logs (pregunta, sql_generado, resultado) VALUES (%s, %s, %s)"
-        cursor.execute(query, (pregunta, sql, resultado))
+        query = """
+        INSERT INTO chat_logs (pregunta, sql_generado, resultado, feedback) 
+        VALUES (%s, %s, %s, %s)
+        """
+        cursor.execute(query, (pregunta, sql, resultado, feedback))
         conn.commit()
         cursor.close()
         conn.close()
@@ -163,7 +159,9 @@ def buscar_sql_en_cache(pregunta_nueva, umbral_similitud=0.90):
 pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
 
 if pregunta:
-    st.markdown(f"**📝 Pregunta:** {pregunta}")
+    with st.chat_message("user"):
+        st.markdown(pregunta)
+
     sql_query = buscar_sql_en_cache(pregunta)
 
     if sql_query:
@@ -176,35 +174,50 @@ if pregunta:
             guardar_en_cache(pregunta, sql_query, embedding)
 
     st.session_state["historial"].append((pregunta, sql_query))
-    st.markdown("🔍 **Consulta SQL Generada:**")
-    st.code(sql_query, language="sql")
 
-    try:
-        if not es_consulta_segura(sql_query):
-            st.error("❌ Consulta peligrosa bloqueada.")
-            log_interaction(pregunta, sql_query, "Consulta bloqueada")
-        else:
-            conn = connect_db()
-            cursor = conn.cursor()
-            cursor.execute(sql_query)
+    with st.chat_message("assistant"):
+        st.markdown("**🔍 Consulta SQL Generada:**")
+        st.code(sql_query, language="sql")
 
-            if sql_query.lower().startswith("select"):
-                columns = [col[0] for col in cursor.description]
-                rows = cursor.fetchall()
-                df = pd.DataFrame(rows, columns=columns)
-                st.dataframe(df)
-                resultado = f"{len(df)} filas"
+        try:
+            if not es_consulta_segura(sql_query):
+                st.error("❌ Consulta peligrosa bloqueada.")
+                log_interaction(pregunta, sql_query, "Consulta bloqueada")
             else:
-                conn.commit()
-                resultado = "Consulta ejecutada."
+                conn = connect_db()
+                cursor = conn.cursor()
+                cursor.execute(sql_query)
 
-            cursor.close()
-            conn.close()
-            st.markdown(f"**💬 Respuesta:** {resultado}")
-            log_interaction(pregunta, sql_query, resultado)
-            st.session_state["conversacion"].append({"pregunta": pregunta, "respuesta": resultado})
-    except Exception as e:
-        st.error(f"❌ Error ejecutando SQL: {e}")
-        log_interaction(pregunta, sql_query, str(e))
-        st.session_state["conversacion"].append({"pregunta": pregunta, "respuesta": str(e)})
+                if sql_query.lower().startswith("select"):
+                    columns = [col[0] for col in cursor.description]
+                    rows = cursor.fetchall()
+                    df = pd.DataFrame(rows, columns=columns)
+                    st.dataframe(df)
+                    resultado = f"{len(df)} filas"
+                else:
+                    conn.commit()
+                    resultado = "Consulta ejecutada."
 
+                cursor.close()
+                conn.close()
+                st.markdown(f"**💬 Respuesta:** {resultado}")
+
+                # Evaluación con botones
+                col1, col2 = st.columns(2)
+                feedback = None
+                with col1:
+                    if st.button("✅ Fue acertada", key=f"ok_{pregunta}"):
+                        feedback = "acertada"
+                        st.success("Gracias por tu feedback.")
+                with col2:
+                    if st.button("❌ No fue correcta", key=f"fail_{pregunta}"):
+                        feedback = "incorrecta"
+                        st.error("Gracias, mejoraremos esta consulta.")
+
+                log_interaction(pregunta, sql_query, resultado, feedback)
+                st.session_state["conversacion"].append({"pregunta": pregunta, "respuesta": resultado})
+
+        except Exception as e:
+            st.error(f"❌ Error ejecutando SQL: {e}")
+            log_interaction(pregunta, sql_query, str(e))
+            st.session_state["conversacion"].append({"pregunta": pregunta, "respuesta": str(e)})
