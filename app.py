@@ -239,4 +239,4 @@ for i, item in enumerate(st.session_state["conversacion"]):
                 st.warning("Gracias por reportarlo. Mejoraremos esta consulta. 🛠️")
                 log_interaction(item["pregunta"], item["sql"], item["respuesta"], "incorrecta")
 
-        st.markdown("---")
+        st.markdown("---")"
