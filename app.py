@@ -332,10 +332,10 @@ if st.toggle("💰 Ver costo acumulado en OpenAI", key="toggle_costos_openai"):
 
 
 # Revisar IP
-#import requests
+import requests
 
-#try:
- #   ip = requests.get("https://api64.ipify.org").text
-  #  st.markdown(f"🌐 **IP pública del servidor (Streamlit):** `{ip}`")
-#except Exception as e:
- #   st.warning(f"No se pudo obtener la IP pública: {e}")
+try:
+    ip = requests.get("https://api64.ipify.org").text
+    st.markdown(f"🌐 **IP pública del servidor (Streamlit):** `{ip}`")
+except Exception as e:
+    st.warning(f"No se pudo obtener la IP pública: {e}")
