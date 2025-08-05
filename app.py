@@ -218,7 +218,12 @@ for i, item in enumerate(st.session_state["conversacion"]):
 
     with st.chat_message("assistant"):
         st.markdown("**🔍 Consulta SQL Generada:**")
-        st.code(item["sql"], language="sql")
+        if "sql" in item:
+    st.markdown("**🔍 Consulta SQL Generada:**")
+    st.code(item["sql"], language="sql")
+else:
+    st.markdown("**⚠️ No se generó una consulta SQL válida para esta pregunta.**")
+
         st.markdown(f"**💬 Respuesta:** {item['respuesta']}")
 
         col1, col2 = st.columns(2)
