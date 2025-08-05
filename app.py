@@ -96,6 +96,11 @@ La tabla VENTAS contiene información histórica de ventas, productos, tiendas, 
 🖍️ Cuando generes la consulta SQL, no expliques la respuesta —solo entrega el SQL limpio y optimizado para MySQL.
 
 Pregunta: {pregunta}
+ Tu tarea es interpretar preguntas en lenguaje natural y generar la consulta SQL correcta para obtener la información desde una única tabla llamada VENTAS.
+
+... [PROMPT OMITIDO PARA BREVIDAD] ...
+
+Pregunta: {pregunta}
 """
 )
 
@@ -210,24 +215,26 @@ if pregunta:
                 conn.close()
                 st.markdown(f"**💬 Respuesta:** {resultado}")
 
+                
                 col1, col2 = st.columns(2)
                 feedback = None
                 with col1:
                     if st.button("✅ Fue acertada", key=f"ok_{pregunta}"):
                         feedback = "acertada"
-                        st.success("Gracias por tu feedback.")
+                        st.success("Gracias por tu feedback. 👍")
                         if guardar_en_cache_pending:
                             guardar_en_cache(pregunta, sql_query, guardar_en_cache_pending)
                 with col2:
                     if st.button("❌ No fue correcta", key=f"fail_{pregunta}"):
                         feedback = "incorrecta"
-                        st.error("Gracias, mejoraremos esta consulta.")
+                        st.warning("Gracias por reportarlo. Mejoraremos esta consulta. 🛠️")
 
                 log_interaction(pregunta, sql_query, resultado, feedback)
                 st.session_state["conversacion"].append({"pregunta": pregunta, "respuesta": resultado})
+                st.markdown("---")
+
 
         except Exception as e:
             st.error(f"❌ Error ejecutando SQL: {e}")
             log_interaction(pregunta, sql_query, str(e))
             st.session_state["conversacion"].append({"pregunta": pregunta, "respuesta": str(e)})
-
