@@ -191,6 +191,8 @@ if pregunta:
                 conn = connect_db()
                 cursor = conn.cursor()
                 cursor.execute(sql_query)
+while cursor.nextset():
+    pass
 
                 if sql_query.lower().startswith("select"):
                     columns = [col[0] for col in cursor.description]
