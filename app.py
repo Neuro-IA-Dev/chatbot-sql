@@ -95,6 +95,8 @@ La tabla `VENTAS` contiene información histórica de ventas, productos, tiendas
 
 7. "Despacho a domicilio" es un ARTICULO
 
+8. Fecha de venta es FECHA_DOCUMENTO.
+
 🔐 Recuerda usar `WHERE`, `GROUP BY` o `ORDER BY` cuando el usuario pregunte por filtros, agrupaciones o rankings.
 
 ✍️ Cuando generes la consulta SQL, no expliques la respuesta —solo entrega el SQL limpio y optimizado para MySQL.
