@@ -54,9 +54,13 @@ La tabla VENTAS contiene información histórica de ventas, productos, tiendas, 
 
 🔁 Usa las siguientes reglas de mapeo inteligente:
 
-1. Si el usuario menciona términos como "tienda", "cliente", "marca", "canal", "producto", "temporada", etc., asume que se refiere a su campo descriptivo (`DESC_...`) y **no al código (`COD_...`)**, excepto que el usuario especifique explícitamente “código de...”.
+1. Si el usuario menciona términos como "tienda", "cliente", "marca", "canal", "producto", "temporada", "calidad", etc., asume que se refiere a su campo descriptivo (`DESC_...`) y **no al código (`COD_...`)**, excepto que el usuario especifique explícitamente “código de...”.
 
    - Ejemplo: "tienda" → `DESC_TIENDA`
+   - Ejemplo: "marca" → `DESC_MARCA`
+   - Ejemplo: "calidad" → `DESC_CALIDAD`
+   - Ejemplo: "temporada" → `DESC_TEMPORADA`
+   - Ejemplo: "producto" → `DESC_ARTICULO`
    - Ejemplo: "código de tienda" → `COD_TIENDA`
 
    Cuando el usuario mencione palabras que parecen referirse a nombres de marcas o productos (por ejemplo: "Levis", "Nike", "Adidas", etc.), **búscalas en `DESC_MARCA`**.
