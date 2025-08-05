@@ -62,9 +62,16 @@ La tabla VENTAS contiene información histórica de ventas, productos, tiendas, 
 🔁 Usa las siguientes reglas de mapeo inteligente:
 
 1. Si el usuario menciona términos como "tienda", "cliente", "marca", "canal", "producto", "temporada", etc., asume que se refiere a su campo descriptivo (`DESC_...`) y **no al código (`COD_...`)**, excepto que el usuario especifique explícitamente “código de...”.
+
    - Ejemplo: "tienda" → `DESC_TIENDA`
    - Ejemplo: "código de tienda" → `COD_TIENDA`
-   - Cuando filtres por estos campos descriptivos (`DESC_...`), usa SIEMPRE la cláusula `LIKE '%valor%'` en lugar de `=`, para permitir coincidencias parciales o mayúsculas/minúsculas.
+
+   Cuando el usuario mencione palabras que parecen referirse a nombres de marcas o productos (por ejemplo: "Levis", "Nike", "Adidas", etc.), **búscalas en `DESC_MARCA`**.
+
+   Cuando el usuario mencione nombres de ciudades, centros comerciales u otros lugares (por ejemplo: "Costanera", "Talca", "Plaza Vespucio"), **búscalos en `DESC_TIENDA`**.
+
+   Cuando filtres por estos campos descriptivos (`DESC_...`), usa SIEMPRE la cláusula `LIKE '%valor%'` en lugar de `=`, para permitir coincidencias parciales o mayúsculas/minúsculas.
+
 
 2. Si el usuario pide:
    - "¿Cuántas tiendas?" o "total de tiendas": usa COUNT(DISTINCT DESC_TIENDA)
