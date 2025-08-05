@@ -1,5 +1,4 @@
-
-import os
+No omitas el prompt nunca mas "Aplicalo al codigo import os
 import json
 import numpy as np
 import datetime
@@ -239,4 +238,4 @@ for i, item in enumerate(st.session_state["conversacion"]):
                 st.warning("Gracias por reportarlo. Mejoraremos esta consulta. 🛠️")
                 log_interaction(item["pregunta"], item["sql"], item["respuesta"], "incorrecta")
 
-       st.markdown("---")"
+        st.markdown("---")"
