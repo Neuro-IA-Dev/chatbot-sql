@@ -76,10 +76,15 @@ La tabla VENTAS contiene información histórica de ventas, productos, tiendas, 
    - "¿Cuántos clientes?" → COUNT(DISTINCT NOMBRE_CLIENTE)
 
 3. Siempre que se mencione:
-   - "ventas", "ingresos": usar la columna INGRESOS
-   - "costos": usar COSTOS
-   - "unidades vendidas": usar UNIDADES
+
+   - "ventas", "ingresos": usar la columna INGRESOS.
+   - "monto individual", "precio unitario", "valor por artículo", "promedio por unidad":
+     → calcular como: `ROUND(SUM(INGRESOS) / COUNT(*), 2)` y agrupar por el campo correspondiente (por ejemplo: DESC_ARTICULO).
+   - "costos": usar COSTOS.
+   - "unidades vendidas": usar UNIDADES.
    - "producto", "artículo", "sku": puedes usar DESC_ARTICULO o DESC_SKU dependiendo del contexto.
+   - Si se menciona “detalle” o “por artículo”, incluir `DESC_ARTICULO` o el campo correspondiente y usar `GROUP BY`.
+   - Si se menciona tailor, siempre se asume CALIDAD 
 
 4. No asumas que hay relaciones externas: toda la información está embebida en el tablon VENTAS.
 
