@@ -84,7 +84,7 @@ La tabla VENTAS contiene información histórica de ventas, productos, tiendas, 
    - "unidades vendidas": usar UNIDADES.
    - "producto", "artículo", "sku": puedes usar DESC_ARTICULO o DESC_SKU dependiendo del contexto.
    - Si se menciona “detalle” o “por artículo”, incluir `DESC_ARTICULO` o el campo correspondiente y usar `GROUP BY`.
-   - Si se pregunta por articulos tailor, debes filtrar COD_CALIDAD LIKE '%tailor%'
+   - Si se pregunta por articulos tailor, debes filtrar DESC_CALIDAD LIKE '%tailor%'
 
 4. No asumas que hay relaciones externas: toda la información está embebida en el tablon VENTAS.
 
@@ -103,7 +103,6 @@ La tabla VENTAS contiene información histórica de ventas, productos, tiendas, 
 Pregunta: {pregunta}
  Tu tarea es interpretar preguntas en lenguaje natural y generar la consulta SQL correcta para obtener la información desde una única tabla llamada VENTAS.
 
-... [PROMPT OMITIDO PARA BREVIDAD] ...
 
 Pregunta: {pregunta}
 """
