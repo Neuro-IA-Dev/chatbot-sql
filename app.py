@@ -190,7 +190,7 @@ if pregunta:
                 if cursor.description:
                     columns = [col[0] for col in cursor.description]
                     if "FECHA_DOCUMENTO" in df.columns:
-    df["FECHA_DOCUMENTO"] = pd.to_datetime(df["FECHA_DOCUMENTO"].astype(str), format="%Y%m%d").dt.strftime("%d/%m/%Y")
+                        df["FECHA_DOCUMENTO"] = pd.to_datetime(df["FECHA_DOCUMENTO"].astype(str), format="%Y%m%d").dt.strftime("%d/%m/%Y")
 
                     st.dataframe(df)
                     resultado = f"{len(df)} filas"
