@@ -13,12 +13,10 @@ from langchain.prompts import PromptTemplate
 from openai import OpenAI
 from pathlib import Path
 
-# CONFIGURACIÓN STREAMLIT
 st.set_page_config(page_title="Asistente Inteligente de NeuroVIA", page_icon="🧠")
 st.image("assets/logo_neurovia.png", width=180)
 st.title("🧠 Asistente Inteligente de Intanis/NeuroVIA")
 
-# Botón para limpiar historial
 if st.button("🧹 Borrar historial de preguntas", key="btn_borrar_historial"):
     st.session_state["historial"] = []
     st.session_state["conversacion"] = []
@@ -26,22 +24,18 @@ if st.button("🧹 Borrar historial de preguntas", key="btn_borrar_historial"):
 
 st.markdown("Haz una pregunta y el sistema generará y ejecutará una consulta SQL automáticamente.")
 
-# Inicializar estados
 if "historial" not in st.session_state:
     st.session_state["historial"] = []
 if "conversacion" not in st.session_state:
     st.session_state["conversacion"] = []
 
-# Mostrar conversación previa
 for entrada in st.session_state["conversacion"]:
     st.markdown(f"**🧠 Pregunta:** {entrada['pregunta']}")
     st.markdown(f"**💬 Respuesta:** {entrada['respuesta']}")
     st.markdown("---")
 
-# OPENAI API
 llm = ChatOpenAI(temperature=0)
 
-# CONEXIÓN A BASE DE DATOS
 def connect_db():
     return mysql.connector.connect(
         host="s1355.use1.mysecurecloudhost.com",
@@ -51,13 +45,11 @@ def connect_db():
         database="domolabs_RedTabBot_DB"
     )
 
-# VERIFICACIÓN DE CONSULTAS SQL
 def es_consulta_segura(sql):
     sql = sql.lower()
     comandos_peligrosos = ["drop", "delete", "truncate", "alter", "update", "insert", "--", "/*", "grant", "revoke"]
     return not any(comando in sql for comando in comandos_peligrosos)
 
-# PROMPT SQL
 db_schema = """
 Base de datos: domolabs_RedTabBot_DB
 Tabla: VENTAS (COD_TIENDA, DESC_TIENDA, COD_CANAL, DESC_CANAL, INGRESOS, COSTOS, UNIDADES, MONEDA, etc.)
@@ -80,7 +72,6 @@ La tabla `VENTAS` contiene información histórica de ventas, productos, tiendas
    - "¿Cuántas tiendas?" o "total de tiendas": usa `COUNT(DISTINCT DESC_TIENDA)`
    - "¿Cuántos canales?" → `COUNT(DISTINCT DESC_CANAL)`
    - "¿Cuántos clientes?" → `COUNT(DISTINCT NOMBRE_CLIENTE)`
-   - Aplica la lógica `COUNT(DISTINCT ...)` para cualquier atributo que tenga múltiples registros.
 
 3. Siempre que se mencione:
    - "ventas", "ingresos": usar la columna `INGRESOS`
@@ -101,12 +92,9 @@ La tabla `VENTAS` contiene información histórica de ventas, productos, tiendas
 🔐 Recuerda usar `WHERE`, `GROUP BY` o `ORDER BY` cuando el usuario pregunte por filtros, agrupaciones o rankings.
 
 🖍️ Cuando generes la consulta SQL, no expliques la respuesta —solo entrega el SQL limpio y optimizado para MySQL.
-
-
 """
 )
 
-# LOG DE PREGUNTAS
 def log_interaction(pregunta, sql, resultado):
     try:
         conn = connect_db()
@@ -119,7 +107,6 @@ def log_interaction(pregunta, sql, resultado):
     except Exception as e:
         st.warning(f"⚠️ No se pudo guardar el log: {e}")
 
-# SEMANTIC CACHE
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 def obtener_embedding(texto):
@@ -173,7 +160,6 @@ def buscar_sql_en_cache(pregunta_nueva, umbral_similitud=0.90):
 
     return None
 
-# INTERFAZ PRINCIPAL
 pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
 
 if pregunta:
@@ -183,7 +169,7 @@ if pregunta:
     if sql_query:
         st.info("🔁 Consulta reutilizada desde la cache.")
     else:
-        prompt = sql_prompt.format(pregunta=pregunta)
+        prompt = sql_prompt.format_prompt(pregunta=pregunta).to_string()
         sql_query = llm.predict(prompt).strip().strip("```sql").strip("```")
         embedding = obtener_embedding(pregunta)
         if embedding:
