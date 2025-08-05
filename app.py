@@ -48,9 +48,9 @@ def connect_db():
     return mysql.connector.connect(
         host="s1355.use1.mysecurecloudhost.com",
         port=3306,
-        user="domolabs_admin",
+        user="domolabs_RedTabBot_USER",
         password="Pa$$w0rd_123",
-        database="domolabs_Chatbot_SQL_DB"
+        database="domolabs_RedTabBot_DB"
     )
 
 # VALIDACIÓN DE CONSULTAS SQL
@@ -61,75 +61,40 @@ def es_consulta_segura(sql):
 
 # ESQUEMA DE LA BASE DE DATOS PARA EL PROMPT
 db_schema = """
-Base de datos: domolabs_Chatbot_SQL_DB
+Base de datos: domolabs_RedTabBot_DB
 
-Tablas y relaciones:
+Eres un asistente experto en análisis de datos para una empresa de retail. Tu tarea es interpretar preguntas en lenguaje natural y generar la consulta SQL correcta para obtener la información desde una única tabla llamada `VENTAS`.
 
-1. articulos
-   - cod_articulo (PK)
-   - desc_articulo
-   - desc_generico
-   - desc_temporada
-   - desc_grado_moda
+La tabla `VENTAS` contiene información histórica de ventas, productos, tiendas, marcas, canales, clientes y artículos. Todos los datos están contenidos en esa misma tabla, por lo que no necesitas hacer JOINs.
 
-2. ventas
-   - numero_documento (PK)
-   - cod_articulo (FK → articulos.cod_articulo)
-   - ingresos
-   - costos
-   - tipo_documento
-   - cod_tienda (FK → tiendas.cod_tienda)
-   - fecha_venta
+🔁 Usa las siguientes reglas de mapeo inteligente:
 
-3. tiendas
-   - cod_tienda (PK)
-   - desc_tienda
-   - cod_canal (FK → canal.cod_canal)
-   - cod_marca (FK → marca.cod_marca)
+1. Si el usuario menciona términos como "tienda", "cliente", "marca", "canal", "producto", "temporada", etc., asume que se refiere a su campo descriptivo (`DESC_...`) y **no al código (`COD_...`)**, excepto que el usuario especifique explícitamente “código de...”.
+   - Ejemplo: "tienda" → `DESC_TIENDA`
+   - Ejemplo: "código de tienda" → `COD_TIENDA`
 
-4. marca
-   - cod_marca (PK)
-   - desc_marca
+2. Si el usuario pide:
+   - "¿Cuántas tiendas?" o "total de tiendas": usa `COUNT(DISTINCT DESC_TIENDA)`
+   - "¿Cuántos canales?" → `COUNT(DISTINCT DESC_CANAL)`
+   - "¿Cuántos clientes?" → `COUNT(DISTINCT NOMBRE_CLIENTE)`
+   - Aplica la lógica `COUNT(DISTINCT ...)` para cualquier atributo que tenga múltiples registros.
 
-5. canal
-   - cod_canal (PK)
-   - desc_canal
+3. Siempre que se mencione:
+   - "ventas", "ingresos": usar la columna `INGRESOS`
+   - "costos": usar `COSTOS`
+   - "unidades vendidas": usar `UNIDADES`
+   - "producto", "artículo", "sku": puedes usar `DESC_ARTICULO` o `DESC_SKU` dependiendo del contexto.
 
-Relaciones clave:
-- ventas.cod_articulo → articulos.cod_articulo
-- ventas.cod_tienda → tiendas.cod_tienda
-- tiendas.cod_marca → marca.cod_marca
-- tiendas.cod_canal → canal.cod_canal
-"""
+4. No asumas que hay relaciones externas: toda la información está embebida en el tablon `VENTAS`.
 
-# PROMPT PERSONALIZADO CON EJEMPLOS
-ejemplos = """
-Ejemplo 1:
-Pregunta: ¿Cuál es la tienda que más ha vendido?
-SQL: SELECT t.desc_tienda, SUM(v.ingresos) AS total_ventas
-FROM ventas v
-JOIN tiendas t ON v.cod_tienda = t.cod_tienda
-GROUP BY t.desc_tienda
-ORDER BY total_ventas DESC
-LIMIT 1;
+🔐 Recuerda usar `WHERE`, `GROUP BY` o `ORDER BY` cuando el usuario pregunte por filtros, agrupaciones o rankings.
 
-Ejemplo 2:
-Pregunta: ¿Cuáles son los artículos más vendidos?
-SQL: SELECT a.desc_articulo, COUNT(*) AS cantidad
-FROM ventas v
-JOIN articulos a ON v.cod_articulo = a.cod_articulo
-GROUP BY a.desc_articulo
-ORDER BY cantidad DESC;
+✍️ Cuando generes la consulta SQL, no expliques la respuesta —solo entrega el SQL limpio y optimizado para MySQL.
 
-Ejemplo 3:
-Pregunta: ¿Qué canal tiene más ingresos?
-SQL: SELECT c.desc_canal, SUM(v.ingresos) AS total
-FROM ventas v
-JOIN tiendas t ON v.cod_tienda = t.cod_tienda
-JOIN canal c ON t.cod_canal = c.cod_canal
-GROUP BY c.desc_canal
-ORDER BY total DESC
-LIMIT 1;
+Tu objetivo es ayudar a usuarios no técnicos a consultar esta base de datos usando lenguaje natural.
+
+Cuando pregunten por montos como Ingresos, ventas etc, debes preguntar si la informacion es en USD o CLP esto ultimo te lo da el campo MONEDA
+
 """
 
 sql_prompt = PromptTemplate(
