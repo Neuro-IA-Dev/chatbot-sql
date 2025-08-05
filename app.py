@@ -188,6 +188,7 @@ if pregunta:
                 rows = cursor.fetchall()
                 if cursor.description:
                     columns = [col[0] for col in cursor.description]
+                    df = pd.DataFrame(rows, columns=columns)
                     if "FECHA_DOCUMENTO" in df.columns:
                         df["FECHA_DOCUMENTO"] = pd.to_datetime(df["FECHA_DOCUMENTO"].astype(str), format="%Y%m%d").dt.strftime("%d/%m/%Y")
 
