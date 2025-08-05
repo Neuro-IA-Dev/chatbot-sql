@@ -1,5 +1,3 @@
-
-
 import os
 import json
 import numpy as np
@@ -40,7 +38,6 @@ for entrada in st.session_state["conversacion"]:
     st.markdown("---")
 
 # API OPENAI
-#openai.api_key = st.secrets["OPENAI_API_KEY"]
 llm = ChatOpenAI(temperature=0)
 
 # CONEXIÓN A MySQL
@@ -62,7 +59,12 @@ def es_consulta_segura(sql):
 # ESQUEMA DE LA BASE DE DATOS PARA EL PROMPT
 db_schema = """
 Base de datos: domolabs_RedTabBot_DB
+Tabla: VENTAS (con columnas como COD_TIENDA, DESC_TIENDA, COD_CANAL, DESC_CANAL, INGRESOS, COSTOS, UNIDADES, MONEDA, etc.)
+"""
 
+sql_prompt = PromptTemplate(
+    input_variables=["pregunta"],
+    template=f"""
 Eres un asistente experto en análisis de datos para una empresa de retail. Tu tarea es interpretar preguntas en lenguaje natural y generar la consulta SQL correcta para obtener la información desde una única tabla llamada `VENTAS`.
 
 La tabla `VENTAS` contiene información histórica de ventas, productos, tiendas, marcas, canales, clientes y artículos. Todos los datos están contenidos en esa misma tabla, por lo que no necesitas hacer JOINs.
@@ -87,33 +89,14 @@ La tabla `VENTAS` contiene información histórica de ventas, productos, tiendas
 
 4. No asumas que hay relaciones externas: toda la información está embebida en el tablon `VENTAS`.
 
+5. Cuando pregunten por montos como ingresos o ventas, consulta si la información requerida debe ser en CLP o USD. Esta información está disponible en la columna `MONEDA`.
+
 🔐 Recuerda usar `WHERE`, `GROUP BY` o `ORDER BY` cuando el usuario pregunte por filtros, agrupaciones o rankings.
 
 ✍️ Cuando generes la consulta SQL, no expliques la respuesta —solo entrega el SQL limpio y optimizado para MySQL.
 
-Tu objetivo es ayudar a usuarios no técnicos a consultar esta base de datos usando lenguaje natural.
-
-Cuando pregunten por montos como Ingresos, ventas etc, debes preguntar si la informacion es en USD o CLP esto ultimo te lo da el campo MONEDA
-
-"""
-
-sql_prompt = PromptTemplate(
-    input_variables=["pregunta"],
-    template=f"""
-Eres un asistente experto en SQL para una base de datos MySQL.
-Considera que los usuarios pueden referirse a los locales y marcas de forma informal o parcial (por ejemplo, "Levis Rancagua" puede referirse a "Local MM OUTLET RANCAGUA" cuya marca es Levis).
-
-**Tu tarea:**
-- Interpreta bien los nombres aproximados.
-- Usa condiciones SQL como `LIKE '%RANCAGUA%'` o `LIKE '%LEVIS%'`.
-- No inventes datos.
 Este es el esquema de la base de datos:
-
 {db_schema}
-
-A continuación algunos ejemplos para que aprendas cómo responder:
-
-{ejemplos}
 
 Ahora responde esta nueva pregunta:
 Pregunta: {{pregunta}}
