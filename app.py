@@ -126,6 +126,28 @@ def log_interaction(pregunta, sql, resultado):
         conn.close()
     except Exception as e:
         st.warning(f"⚠️ No se pudo guardar el log en la base de datos: {e}")
+
+# ... (rest of the code stays the same)
+
+            if sql_query.lower().startswith("select"):
+                columns = [col[0] for col in cursor.description]
+                results = cursor.fetchall()
+                df = pd.DataFrame(results, columns=columns)
+
+                # Formateo de fechas si existe alguna columna de fecha
+                for col in df.columns:
+                    if pd.api.types.is_datetime64_any_dtype(df[col]) or "fecha" in col.lower() or "dia" in col.lower():
+                        try:
+                            df[col] = pd.to_datetime(df[col])
+                            if len(df) == 1:
+                                df[col] = df[col].dt.strftime('%A %d de %B de %Y')  # Ej: martes 05 de agosto de 2025
+                            else:
+                                df[col] = df[col].dt.strftime('%d/%m/%Y')
+                        except Exception:
+                            pass
+
+                st.dataframe(df)
+                resultado_str = f"{len(df)} filas"
 # SEMANTIC CACHE
 
 from openai import OpenAI
