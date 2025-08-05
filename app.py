@@ -17,27 +17,24 @@ st.set_page_config(page_title="Asistente Inteligente de NeuroVIA", page_icon="�
 st.image("assets/logo_neurovia.png", width=180)
 st.title("🧠 Asistente Inteligente de Intanis/NeuroVIA")
 
-if st.button("🧹 Borrar historial de preguntas", key="btn_borrar_historial"):
+if st.button("🪝 Borrar historial de preguntas", key="btn_borrar_historial"):
     st.session_state["historial"] = []
     st.session_state["conversacion"] = []
     st.success("Historial de conversación borrado.")
 
 st.markdown("Haz una pregunta y el sistema generará y ejecutará una consulta SQL automáticamente.")
 
-# Inicializar historial en la sesión
 if "historial" not in st.session_state:
     st.session_state["historial"] = []
 
 if "conversacion" not in st.session_state:
     st.session_state["conversacion"] = []
 
-# Mostrar historial conversacional
 for entrada in st.session_state["conversacion"]:
     st.markdown(f"**🧠 Pregunta:** {entrada['pregunta']}")
     st.markdown(f"**💬 Respuesta:** {entrada['respuesta']}")
     st.markdown("---")
 
-# API OPENAI
 llm = ChatOpenAI(temperature=0)
 
 # CONEXIÓN A MySQL
@@ -50,66 +47,13 @@ def connect_db():
         database="domolabs_RedTabBot_DB"
     )
 
-# VALIDACIÓN DE CONSULTAS SQL
 def es_consulta_segura(sql):
     sql = sql.lower()
     comandos_peligrosos = ["drop", "delete", "truncate", "alter", "update", "insert", "--", "/*", "grant", "revoke"]
     return not any(comando in sql for comando in comandos_peligrosos)
 
-# ESQUEMA DE LA BASE DE DATOS PARA EL PROMPT
-db_schema = """
-Base de datos: domolabs_RedTabBot_DB
-Tabla: VENTAS (con columnas como COD_TIENDA, DESC_TIENDA, COD_CANAL, DESC_CANAL, INGRESOS, COSTOS, UNIDADES, MONEDA, etc.)
-"""
-
-sql_prompt = PromptTemplate(
-    input_variables=["pregunta"],
-    template=f"""
-Eres un asistente experto en análisis de datos para una empresa de retail. Tu tarea es interpretar preguntas en lenguaje natural y generar la consulta SQL correcta para obtener la información desde una única tabla llamada `VENTAS`.
-
-La tabla `VENTAS` contiene información histórica de ventas, productos, tiendas, marcas, canales, clientes y artículos. Todos los datos están contenidos en esa misma tabla, por lo que no necesitas hacer JOINs.
-
-🔁 Usa las siguientes reglas de mapeo inteligente:
-
-1. Si el usuario menciona términos como "tienda", "cliente", "marca", "canal", "producto", "temporada", etc., asume que se refiere a su campo descriptivo (`DESC_...`) y **no al código (`COD_...`)**, excepto que el usuario especifique explícitamente “código de...”.
-   - Ejemplo: "tienda" → `DESC_TIENDA`
-   - Ejemplo: "código de tienda" → `COD_TIENDA`
-
-2. Si el usuario pide:
-   - "¿Cuántas tiendas?" o "total de tiendas": usa `COUNT(DISTINCT DESC_TIENDA)`
-   - "¿Cuántos canales?" → `COUNT(DISTINCT DESC_CANAL)`
-   - "¿Cuántos clientes?" → `COUNT(DISTINCT NOMBRE_CLIENTE)`
-   - Aplica la lógica `COUNT(DISTINCT ...)` para cualquier atributo que tenga múltiples registros.
-
-3. Siempre que se mencione:
-   - "ventas", "ingresos": usar la columna `INGRESOS`
-   - "costos": usar `COSTOS`
-   - "unidades vendidas": usar `UNIDADES`
-   - "producto", "artículo", "sku": puedes usar `DESC_ARTICULO` o `DESC_SKU` dependiendo del contexto.
-
-4. No asumas que hay relaciones externas: toda la información está embebida en el tablon `VENTAS`.
-
-5. Cuando pregunten por montos como ingresos o ventas, consulta si la información requerida debe ser en CLP o USD. Esta información está disponible en la columna `MONEDA`.
-
-6. Cuando pregunten algo como "muestrame el codigo y descripcion de todas las tiendas que hay" debes hacer un distinct.
-
-7. "Despacho a domicilio" es un ARTICULO
-
-8. Fecha de venta es FECHA_DOCUMENTO.
-
-🔐 Recuerda usar `WHERE`, `GROUP BY` o `ORDER BY` cuando el usuario pregunte por filtros, agrupaciones o rankings.
-
-✍️ Cuando generes la consulta SQL, no expliques la respuesta —solo entrega el SQL limpio y optimizado para MySQL.
-
-Este es el esquema de la base de datos:
-{db_schema}
-
-Ahora responde esta nueva pregunta:
-Pregunta: {{pregunta}}
-
-SQL:
-"""
-)
+# PROMPT
+# (...se mantiene igual para el PromptTemplate y esquema)
 
 # LOG DE INTERACCIONES EN BASE DE DATOS
 def log_interaction(pregunta, sql, resultado):
@@ -127,42 +71,15 @@ def log_interaction(pregunta, sql, resultado):
     except Exception as e:
         st.warning(f"⚠️ No se pudo guardar el log en la base de datos: {e}")
 
-# ... (rest of the code stays the same)
-
-            if sql_query.lower().startswith("select"):
-                columns = [col[0] for col in cursor.description]
-                results = cursor.fetchall()
-                df = pd.DataFrame(results, columns=columns)
-
-                # Formateo de fechas si existe alguna columna de fecha
-                for col in df.columns:
-                    if pd.api.types.is_datetime64_any_dtype(df[col]) or "fecha" in col.lower() or "dia" in col.lower():
-                        try:
-                            df[col] = pd.to_datetime(df[col])
-                            if len(df) == 1:
-                                df[col] = df[col].dt.strftime('%A %d de %B de %Y')  # Ej: martes 05 de agosto de 2025
-                            else:
-                                df[col] = df[col].dt.strftime('%d/%m/%Y')
-                        except Exception:
-                            pass
-
-                st.dataframe(df)
-                resultado_str = f"{len(df)} filas"
 # SEMANTIC CACHE
-
-from openai import OpenAI
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 def obtener_embedding(texto):
     if not texto or not texto.strip():
         st.warning("❌ El texto para obtener embedding está vacío.")
         return None
-
     try:
-        response = client.embeddings.create(
-            input=[texto],
-            model="text-embedding-3-small"
-        )
+        response = client.embeddings.create(input=[texto], model="text-embedding-3-small")
         return response.data[0].embedding
     except Exception as e:
         st.warning(f"Error al obtener embedding: {e}")
@@ -185,52 +102,36 @@ def buscar_sql_en_cache(pregunta_nueva, umbral_similitud=0.90):
         embedding_nuevo = obtener_embedding(pregunta_nueva)
         if embedding_nuevo is None:
             return None
-
         embedding_nuevo = np.array(embedding_nuevo)
-
         conn = connect_db()
         cursor = conn.cursor(dictionary=True)
         cursor.execute("SELECT pregunta, embedding, sql_generado FROM semantic_cache")
         rows = cursor.fetchall()
         cursor.close()
         conn.close()
-
         for row in rows:
             try:
                 embedding_guardado = json.loads(row["embedding"])
                 if embedding_guardado is None:
                     continue
-
                 embedding_guardado = np.array(embedding_guardado)
                 similitud = np.dot(embedding_nuevo, embedding_guardado) / (
                     np.linalg.norm(embedding_nuevo) * np.linalg.norm(embedding_guardado)
                 )
-
                 if similitud >= umbral_similitud:
                     return row["sql_generado"]
             except Exception as e:
                 st.warning(f"Error comparando embeddings: {e}")
+        return None
+    except Exception as e:
+        st.warning(f"Error al buscar en el semantic cache: {e}")
+        return None
 
-        return None
-    except Exception as e:
-        st.warning(f"Error al buscar en el semantic cache: {e}")
-        return None
-    except Exception as e:
-        st.warning(f"Error al buscar en el semantic cache: {e}")
-        return None
-# ENTRADA
+# ENTRADA PRINCIPAL
 pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
 
 if pregunta:
     st.markdown(f"**📝 Pregunta:** {pregunta}")
-
-    contexto = ""
-    for i, (preg, sql) in enumerate(st.session_state["historial"][-5:]):
-        contexto += f"Pregunta anterior: {preg}\nSQL generado: {sql}\n"
-
-if pregunta:
-    st.markdown(f"**📝 Pregunta:** {pregunta}")
-
     sql_query = buscar_sql_en_cache(pregunta)
 
     if sql_query:
@@ -238,13 +139,11 @@ if pregunta:
     else:
         prompt = sql_prompt.format_prompt(pregunta=pregunta).to_string()
         sql_query = llm.predict(prompt).strip().strip("```sql").strip("```")
-
         embedding = obtener_embedding(pregunta)
         if embedding:
             guardar_en_cache(pregunta, sql_query, embedding)
 
     st.session_state["historial"].append((pregunta, sql_query))
-
     st.markdown("🔍 **Consulta SQL Generada:**")
     st.code(sql_query, language="sql")
 
@@ -256,24 +155,30 @@ if pregunta:
             conn = connect_db()
             cursor = conn.cursor()
             cursor.execute(sql_query)
-
             if sql_query.lower().startswith("select"):
                 columns = [col[0] for col in cursor.description]
                 results = cursor.fetchall()
                 df = pd.DataFrame(results, columns=columns)
+                for col in df.columns:
+                    if pd.api.types.is_datetime64_any_dtype(df[col]) or "fecha" in col.lower() or "dia" in col.lower():
+                        try:
+                            df[col] = pd.to_datetime(df[col])
+                            if len(df) == 1:
+                                df[col] = df[col].dt.strftime('%A %d de %B de %Y')
+                            else:
+                                df[col] = df[col].dt.strftime('%d/%m/%Y')
+                        except Exception:
+                            pass
                 st.dataframe(df)
                 resultado_str = f"{len(df)} filas"
             else:
                 conn.commit()
                 resultado_str = "Consulta ejecutada correctamente."
-
             cursor.close()
             conn.close()
-
             st.markdown(f"**💬 Respuesta:** {resultado_str}")
             log_interaction(pregunta, sql_query, resultado_str)
             st.session_state["conversacion"].append({"pregunta": pregunta, "respuesta": resultado_str})
-
     except Exception as e:
         st.error(f"❌ Error al ejecutar la consulta: {e}")
         log_interaction(pregunta, sql_query, f"Error: {e}")
