@@ -21,7 +21,7 @@ if "historial" not in st.session_state:
 if "conversacion" not in st.session_state:
     st.session_state["conversacion"] = []
 
-if st.button("\U0001f9f9 Borrar historial de preguntas", key="btn_borrar_historial"):
+if st.button("🧹 Borrar historial de preguntas", key="btn_borrar_historial"):
     st.session_state["historial"] = []
     st.session_state["conversacion"] = []
     st.success("Historial de conversación borrado.")
@@ -30,7 +30,6 @@ st.markdown("Haz una pregunta y el sistema generará y ejecutará una consulta S
 
 llm = ChatOpenAI(temperature=0)
 
-# CONEXIÓN A BASE DE DATOS
 def connect_db():
     return mysql.connector.connect(
         host="s1355.use1.mysecurecloudhost.com",
@@ -45,7 +44,6 @@ def es_consulta_segura(sql):
     comandos_peligrosos = ["drop", "delete", "truncate", "alter", "update", "insert", "--", "/*", "grant", "revoke"]
     return not any(comando in sql for comando in comandos_peligrosos)
 
-# PROMPT
 sql_prompt = PromptTemplate(
     input_variables=["pregunta"],
     template="""
@@ -94,15 +92,9 @@ sql_prompt = PromptTemplate(
 🖍️ Cuando generes la consulta SQL, no expliques la respuesta —solo entrega el SQL limpio y optimizado para MySQL.
 
 Pregunta: {pregunta}
- Tu tarea es interpretar preguntas en lenguaje natural y generar la consulta SQL correcta para obtener la información desde una única tabla llamada VENTAS.
-
-... [PROMPT OMITIDO PARA BREVIDAD] ...
-
-Pregunta: {pregunta}
 """
 )
 
-# LOGGING Y FEEDBACK
 def log_interaction(pregunta, sql, resultado, feedback=None):
     try:
         conn = connect_db()
@@ -164,6 +156,7 @@ def buscar_sql_en_cache(pregunta_nueva, umbral_similitud=0.90):
         st.warning(f"❌ Error buscando en cache: {e}")
     return None
 
+# ENTRADA DEL USUARIO
 pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
 
 if pregunta:
@@ -171,66 +164,73 @@ if pregunta:
         st.markdown(pregunta)
 
     sql_query = buscar_sql_en_cache(pregunta)
+    guardar_en_cache_pending = None
 
     if sql_query:
         st.info("🔁 Consulta reutilizada desde la cache.")
-        guardar_en_cache_pending = None
     else:
         prompt_text = sql_prompt.format(pregunta=pregunta)
         sql_query = llm.predict(prompt_text).replace("```sql", "").replace("```", "").strip()
         embedding = obtener_embedding(pregunta)
         guardar_en_cache_pending = embedding if embedding else None
 
+    resultado = ""
+
+    try:
+        if not es_consulta_segura(sql_query):
+            st.error("❌ Consulta peligrosa bloqueada.")
+            resultado = "Consulta bloqueada"
+        else:
+            conn = connect_db()
+            cursor = conn.cursor()
+            cursor.execute(sql_query)
+
+            if sql_query.lower().startswith("select"):
+                rows = cursor.fetchall()
+                if cursor.description:
+                    columns = [col[0] for col in cursor.description]
+                    df = pd.DataFrame(rows, columns=columns)
+                    st.dataframe(df)
+                    resultado = f"{len(df)} filas"
+                else:
+                    resultado = "La consulta no devolvió resultados."
+            else:
+                conn.commit()
+                resultado = "Consulta ejecutada."
+
+            cursor.close()
+            conn.close()
+
+    except Exception as e:
+        resultado = f"❌ Error ejecutando SQL: {e}"
+
+    st.session_state["conversacion"].append({
+        "pregunta": pregunta,
+        "respuesta": resultado,
+        "sql": sql_query,
+        "cache": guardar_en_cache_pending
+    })
+
+# MOSTRAR TODAS LAS INTERACCIONES COMO CHAT
+for i, item in enumerate(st.session_state["conversacion"]):
+    with st.chat_message("user"):
+        st.markdown(item["pregunta"])
+
     with st.chat_message("assistant"):
         st.markdown("**🔍 Consulta SQL Generada:**")
-        st.code(sql_query, language="sql")
+        st.code(item["sql"], language="sql")
+        st.markdown(f"**💬 Respuesta:** {item['respuesta']}")
 
-        try:
-            if not es_consulta_segura(sql_query):
-                st.error("❌ Consulta peligrosa bloqueada.")
-                log_interaction(pregunta, sql_query, "Consulta bloqueada")
-                st.session_state["conversacion"].append({"pregunta": pregunta, "respuesta": "Consulta bloqueada"})
-            else:
-                conn = connect_db()
-                cursor = conn.cursor()
-                cursor.execute(sql_query)
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("✅ Fue acertada", key=f"ok_{i}"):
+                st.success("Gracias por tu feedback. 👍")
+                if item.get("cache"):
+                    guardar_en_cache(item["pregunta"], item["sql"], item["cache"])
+                log_interaction(item["pregunta"], item["sql"], item["respuesta"], "acertada")
+        with col2:
+            if st.button("❌ No fue correcta", key=f"fail_{i}"):
+                st.warning("Gracias por reportarlo. Mejoraremos esta consulta. 🛠️")
+                log_interaction(item["pregunta"], item["sql"], item["respuesta"], "incorrecta")
 
-                if sql_query.lower().startswith("select"):
-                    rows = cursor.fetchall()
-                    if cursor.description:
-                        columns = [col[0] for col in cursor.description]
-                        df = pd.DataFrame(rows, columns=columns)
-                        st.dataframe(df)
-                        resultado = f"{len(df)} filas"
-                    else:
-                        resultado = "La consulta no devolvió resultados."
-                else:
-                    conn.commit()
-                    resultado = "Consulta ejecutada."
-
-                cursor.close()
-                conn.close()
-                st.markdown(f"**💬 Respuesta:** {resultado}")
-
-                st.session_state["conversacion"].append({"pregunta": pregunta, "respuesta": resultado})
-
-                col1, col2 = st.columns(2)
-                feedback = None
-                with col1:
-                    if st.button("✅ Fue acertada", key=f"ok_{pregunta}"):
-                        feedback = "acertada"
-                        st.success("Gracias por tu feedback. 👍")
-                        if guardar_en_cache_pending:
-                            guardar_en_cache(pregunta, sql_query, guardar_en_cache_pending)
-                with col2:
-                    if st.button("❌ No fue correcta", key=f"fail_{pregunta}"):
-                        feedback = "incorrecta"
-                        st.warning("Gracias por reportarlo. Mejoraremos esta consulta. 🛠️")
-
-                log_interaction(pregunta, sql_query, resultado, feedback)
-                st.markdown("---")
-
-        except Exception as e:
-            st.error(f"❌ Error ejecutando SQL: {e}")
-            log_interaction(pregunta, sql_query, str(e))
-            st.session_state["conversacion"].append({"pregunta": pregunta, "respuesta": str(e)})
+        st.markdown("---")
