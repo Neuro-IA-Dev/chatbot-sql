@@ -1,4 +1,4 @@
-No omitas el prompt nunca mas "Aplicalo al codigo import os
+import os
 import json
 import numpy as np
 import datetime
