@@ -296,7 +296,29 @@ if st.session_state["conversacion"]:
         with st.expander(f"💬 {item['pregunta']}", expanded=False):
             st.markdown("**Consulta SQL Generada:**")
             st.code(item["sql"], language="sql")
-            st.markdown(f"**Respuesta:** {item['respuesta']}")
+
+            st.markdown("**📊 Resultado:**")
+            try:
+                # Intentar volver a ejecutar la consulta para mostrar los resultados
+                if es_consulta_segura(item["sql"]):
+                    conn = connect_db()
+                    cursor = conn.cursor()
+                    cursor.execute(item["sql"])
+                    rows = cursor.fetchall()
+                    if cursor.description:
+                        columns = [col[0] for col in cursor.description]
+                        df_hist = pd.DataFrame(rows, columns=columns)
+                        if "FECHA_DOCUMENTO" in df_hist.columns:
+                            df_hist["FECHA_DOCUMENTO"] = pd.to_datetime(df_hist["FECHA_DOCUMENTO"].astype(str), errors="coerce", format="%Y%m%d").dt.strftime("%d/%m/%Y")
+                        st.dataframe(df_hist, hide_index=True)
+                    else:
+                        st.markdown("*Sin resultados para esta consulta.*")
+                    cursor.close()
+                    conn.close()
+                else:
+                    st.warning("⚠️ Consulta peligrosa. No se vuelve a ejecutar por seguridad.")
+            except Exception as e:
+                st.error(f"❌ Error al mostrar resultado anterior: {e}")
 
             col1, col2 = st.columns(2)
             with col1:
@@ -304,11 +326,10 @@ if st.session_state["conversacion"]:
                     st.success("Gracias por tu feedback. 👍")
                     if item.get("cache"):
                         guardar_en_cache(item["pregunta"], item["sql"], item["cache"])
-                    log_interaction(item["pregunta"], item["sql"], item["respuesta"], "acertada")
+                    log_interaction(item["pregunta"], item["sql"], "respuesta recreada", "acertada")
             with col2:
                 if st.button("❌ No fue correcta", key=f"fail_{i}"):
                     st.warning("Gracias por reportarlo. Mejoraremos esta consulta. 🚲")
-                    log_interaction(item["pregunta"], item["sql"], item["respuesta"], "incorrecta")
-
+                    log_interaction(item["pregunta"], item["sql"], "respuesta recreada", "incorrecta")
 
         st.markdown("---")
