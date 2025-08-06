@@ -90,6 +90,9 @@ sql_prompt = PromptTemplate(
 - Si se menciona “para hombre”, “masculino”, “de varón” o “de caballero”, filtra con DESC_GENERO LIKE '%men%'.
 - Si se menciona “unisex”, usa DESC_GENERO LIKE '%unisex%'.
 
+10. Siempre que se pregunte "¿de qué canal es esa tienda?", "¿qué canal pertenece?" o algo similar, usa `SELECT DISTINCT DESC_CANAL ...` para evitar resultados duplicados.
+
+
 🔐 Recuerda usar WHERE, GROUP BY o ORDER BY cuando el usuario pregunte por filtros, agrupaciones o rankings.
 
 🖍️ Cuando generes la consulta SQL, no expliques la respuesta —solo entrega el SQL limpio y optimizado para MySQL.
