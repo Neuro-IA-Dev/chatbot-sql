@@ -98,6 +98,8 @@ sql_prompt = PromptTemplate(
 
 13. Unidades negativas son devoluciones
 
+14. EL DESC_ARTICULO = "DESPACHO A DOMICILIO" no se considera articulo si no un servicio. 
+
 Cuando se reemplace un valor como “ese artículo”, “esa tienda”, etc., asegúrate de utilizar siempre `LIKE '%valor%'` en lugar de `=` para evitar errores por coincidencias exactas.
 
 🔐 Recuerda usar WHERE, GROUP BY o ORDER BY cuando el usuario pregunte por filtros, agrupaciones o rankings.
