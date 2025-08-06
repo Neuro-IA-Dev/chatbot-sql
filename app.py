@@ -13,9 +13,9 @@ from openai import OpenAI
 import re
 
 # CONFIG STREAMLIT
-st.set_page_config(page_title="Asistente Inteligente de Intanis", page_icon="🧠")
+st.set_page_config(page_title="Asistente Inteligente de Ventas Retail", page_icon="🧠")
 st.image("assets/logo_neurovia.png", width=180)
-st.title(":brain: Asistente Inteligente de Intanis")
+st.title(":brain: Asistente Inteligente de Intanis Ventas Retail")
 
 if "historial" not in st.session_state:
     st.session_state["historial"] = []
