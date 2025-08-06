@@ -102,6 +102,7 @@ sql_prompt = PromptTemplate(
 
 15. COD_MODELO,	COD_COLOR.	TALLA y	LARGO son campos que no tienen descripcion solo mostrarlos asi
 
+16. Cuando se hable de un articulo, usar DESC_ARTICULO para mostrarlo a menos que se pida solo el Codigo. ejemplo "Jeans mas vendido de mujer por modelo, talla, largo y color"  DESC_ARTICULO, COD_MODELO, etc.
 
 Cuando se reemplace un valor como “ese artículo”, “esa tienda”, etc., asegúrate de utilizar siempre `LIKE '%valor%'` en lugar de `=` para evitar errores por coincidencias exactas.
 
