@@ -192,7 +192,8 @@ if pregunta:
     if sql_query:
         st.info("🔁 Consulta reutilizada desde la cache.")
     else:
-        prompt_text = sql_prompt.format(pregunta=pregunta)
+        pregunta_con_contexto = aplicar_contexto(pregunta)
+        prompt_text = sql_prompt.format(pregunta=pregunta_con_contexto)
         sql_query = llm.predict(prompt_text).replace("```sql", "").replace("```", "").strip()
         embedding = obtener_embedding(pregunta)
         guardar_en_cache_pending = embedding if embedding else None
