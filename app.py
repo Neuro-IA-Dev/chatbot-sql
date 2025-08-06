@@ -126,6 +126,7 @@ def aplicar_contexto(pregunta):
 
 campos_contexto = ["DESC_TIENDA", "DESC_CANAL", "DESC_MARCA", "DESC_ARTICULO", "DESC_GENERO", "NOMBRE_CLIENTE"]
 
+
 def actualizar_contexto(df):
     for campo in campos_contexto:
         if campo in df.columns and not df[campo].isnull().all():
