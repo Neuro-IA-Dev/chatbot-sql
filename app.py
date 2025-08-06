@@ -1,3 +1,4 @@
+
 import os
 import json
 import numpy as np
@@ -9,6 +10,7 @@ import pandas as pd
 from langchain.chat_models import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from openai import OpenAI
+import re
 
 # CONFIG STREAMLIT
 st.set_page_config(page_title="Asistente Inteligente de NeuroVIA", page_icon="🧠")
@@ -95,7 +97,7 @@ sql_prompt = PromptTemplate(
 Pregunta: {pregunta}
 """
 )
-# CONTEXTO AUTOMÁTICO
+
 referencias = {
     "esa tienda": "DESC_TIENDA",
     "ese canal": "DESC_CANAL",
@@ -105,8 +107,6 @@ referencias = {
     "esa categoría": "DESC_CATEGORIA",
     "ese cliente": "NOMBRE_CLIENTE"
 }
-
-import re
 
 def aplicar_contexto(pregunta):
     pregunta_modificada = pregunta
@@ -183,7 +183,6 @@ def buscar_sql_en_cache(pregunta_nueva, umbral_similitud=0.90):
     except Exception as e:
         st.warning(f"❌ Error buscando en cache: {e}")
     return None
-
 # ENTRADA DEL USUARIO
 pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
 
@@ -224,6 +223,7 @@ if pregunta:
 
                     st.dataframe(df)
                     resultado = f"{len(df)} filas"
+                    actualizar_contexto(df)
                 else:
                     resultado = "La consulta no devolvió resultados."
             else:
