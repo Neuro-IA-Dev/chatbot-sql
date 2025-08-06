@@ -92,6 +92,7 @@ sql_prompt = PromptTemplate(
 
 10. Siempre que se pregunte "¿de qué canal es esa tienda?", "¿qué canal pertenece?" o algo similar, usa `SELECT DISTINCT DESC_CANAL ...` para evitar resultados duplicados.
 
+11. Si se pregunta por promociones, se refiere al campo D_PROMO como descripcion y el PROMO como codigo. Un articulo se vendio con promocion cuando estos campos no son null.
 Cuando se reemplace un valor como “ese artículo”, “esa tienda”, etc., asegúrate de utilizar siempre `LIKE '%valor%'` en lugar de `=` para evitar errores por coincidencias exactas.
 
 🔐 Recuerda usar WHERE, GROUP BY o ORDER BY cuando el usuario pregunte por filtros, agrupaciones o rankings.
