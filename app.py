@@ -248,29 +248,54 @@ if pregunta:
     })
 
 # MOSTRAR TODAS LAS INTERACCIONES COMO CHAT
-for i, item in enumerate(st.session_state["conversacion"]):
+# UI MEJORADA EN STREAMLIT
+# (Esta parte va justo al final del archivo app.py, reemplazando el bloque de visualización actual de interacciones)
+
+if pregunta:
     with st.chat_message("user"):
-        st.markdown(item["pregunta"])
+        st.markdown(f"### 🤖 Pregunta actual:")
+        st.markdown(f"> {pregunta}")
 
     with st.chat_message("assistant"):
-        if "sql" in item:
-            st.markdown("**🔍 Consulta SQL Generada:**")
-            st.code(item["sql"], language="sql")
-            st.markdown(f"**💬 Respuesta:** {item['respuesta']}")
-        else:
-            st.warning("⚠️ No se generó una consulta SQL válida para esta pregunta.")
-            st.markdown(f"**💬 Respuesta:** {item['respuesta']}")
+        st.markdown("### 🔍 Consulta SQL Generada:")
+        st.code(sql_query, language="sql")
+        st.markdown("### 💬 Respuesta:")
+        st.markdown(resultado)
 
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("✅ Fue acertada", key=f"ok_{i}"):
+            if st.button("✅ Fue acertada", key=f"ok_last"):
                 st.success("Gracias por tu feedback. 👍")
-                if item.get("cache"):
-                    guardar_en_cache(item["pregunta"], item["sql"], item["cache"])
-                log_interaction(item["pregunta"], item["sql"], item["respuesta"], "acertada")
+                if guardar_en_cache_pending:
+                    guardar_en_cache(pregunta, sql_query, guardar_en_cache_pending)
+                log_interaction(pregunta, sql_query, resultado, "acertada")
         with col2:
-            if st.button("❌ No fue correcta", key=f"fail_{i}"):
-                st.warning("Gracias por reportarlo. Mejoraremos esta consulta. 🛠️")
-                log_interaction(item["pregunta"], item["sql"], item["respuesta"], "incorrecta")
+            if st.button("❌ No fue correcta", key=f"fail_last"):
+                st.warning("Gracias por reportarlo. Mejoraremos esta consulta. 🚲")
+                log_interaction(pregunta, sql_query, resultado, "incorrecta")
+
+    st.markdown("---")
+
+# MOSTRAR HISTORIAL PREVIO (EXCLUYENDO LA Última PREGUNTA)
+if st.session_state["conversacion"]:
+    st.markdown("## ⌛ Historial de preguntas anteriores")
+    for i, item in enumerate(reversed(st.session_state["conversacion"][:-1])):
+        with st.expander(f"💬 {item['pregunta']}", expanded=False):
+            st.markdown("**Consulta SQL Generada:**")
+            st.code(item["sql"], language="sql")
+            st.markdown(f"**Respuesta:** {item['respuesta']}")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✅ Fue acertada", key=f"ok_{i}"):
+                    st.success("Gracias por tu feedback. 👍")
+                    if item.get("cache"):
+                        guardar_en_cache(item["pregunta"], item["sql"], item["cache"])
+                    log_interaction(item["pregunta"], item["sql"], item["respuesta"], "acertada")
+            with col2:
+                if st.button("❌ No fue correcta", key=f"fail_{i}"):
+                    st.warning("Gracias por reportarlo. Mejoraremos esta consulta. 🚲")
+                    log_interaction(item["pregunta"], item["sql"], item["respuesta"], "incorrecta")
+
 
         st.markdown("---")
