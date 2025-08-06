@@ -109,7 +109,11 @@ referencias = {
     "ese producto": "DESC_ARTICULO",
     "ese artículo": "DESC_ARTICULO",
     "esa categoría": "DESC_CATEGORIA",
-    "ese cliente": "NOMBRE_CLIENTE"
+    "ese cliente": "NOMBRE_CLIENTE",
+    "ese género": "DESC_GENERO",
+    "ese sexo": "DESC_GENERO",
+    "ese público": "DESC_GENERO",
+    "esa categoría de género": "DESC_GENERO"
 }
 
 def aplicar_contexto(pregunta):
