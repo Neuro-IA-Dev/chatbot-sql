@@ -19,6 +19,8 @@ if "historial" not in st.session_state:
     st.session_state["historial"] = []
 if "conversacion" not in st.session_state:
     st.session_state["conversacion"] = []
+if "contexto" not in st.session_state:
+    st.session_state["contexto"] = {}
 
 if st.button("🧹 Borrar historial de preguntas", key="btn_borrar_historial"):
     st.session_state["historial"] = []
