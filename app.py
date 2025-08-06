@@ -106,11 +106,14 @@ referencias = {
     "ese cliente": "NOMBRE_CLIENTE"
 }
 
+import re
+
 def aplicar_contexto(pregunta):
-    pregunta_modificada = pregunta.lower()
+    pregunta_modificada = pregunta
     for ref, campo in referencias.items():
-        if ref in pregunta_modificada and campo in st.session_state["contexto"]:
-            pregunta_modificada = pregunta_modificada.replace(ref, st.session_state["contexto"][campo].lower())
+        if ref.lower() in pregunta.lower() and campo in st.session_state["contexto"]:
+            valor_contexto = st.session_state["contexto"][campo]
+            pregunta_modificada = re.sub(ref, valor_contexto, pregunta_modificada, flags=re.IGNORECASE)
     return pregunta_modificada
 
 campos_contexto = ["DESC_TIENDA", "DESC_CANAL", "DESC_MARCA", "DESC_ARTICULO", "DESC_GENERO", "NOMBRE_CLIENTE"]
