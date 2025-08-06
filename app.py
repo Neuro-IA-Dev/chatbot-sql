@@ -31,7 +31,7 @@ if st.button("🧹 Borrar historial de preguntas", key="btn_borrar_historial"):
 
 st.markdown("Haz una pregunta y el sistema generará y ejecutará una consulta SQL automáticamente.")
 
-llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0)
+llm = ChatOpenAI(model_name="gpt-4o", temperature=0)
 
 def connect_db():
     return mysql.connector.connect(
