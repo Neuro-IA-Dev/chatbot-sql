@@ -337,3 +337,16 @@ if st.session_state["conversacion"]:
                     log_interaction(item["pregunta"], item["sql"], "respuesta recreada", "incorrecta")
 
         st.markdown("---")
+import requests
+
+def obtener_ip_publica():
+    try:
+        ip = requests.get("https://api.ipify.org").text
+        print(f"Tu IP pública es: {ip}")
+        return ip
+    except Exception as e:
+        print(f"Error al obtener la IP pública: {e}")
+        return None
+
+# Ejecutar
+ip_actual = obtener_ip_publica()
