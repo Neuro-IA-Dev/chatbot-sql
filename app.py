@@ -93,6 +93,30 @@ sql_prompt = PromptTemplate(
 Pregunta: {pregunta}
 """
 )
+# CONTEXTO AUTOMÁTICO
+referencias = {
+    "esa tienda": "DESC_TIENDA",
+    "ese canal": "DESC_CANAL",
+    "esa marca": "DESC_MARCA",
+    "ese producto": "DESC_ARTICULO",
+    "ese artículo": "DESC_ARTICULO",
+    "esa categoría": "DESC_CATEGORIA",
+    "ese cliente": "NOMBRE_CLIENTE"
+}
+
+def aplicar_contexto(pregunta):
+    pregunta_modificada = pregunta.lower()
+    for ref, campo in referencias.items():
+        if ref in pregunta_modificada and campo in st.session_state["contexto"]:
+            pregunta_modificada = pregunta_modificada.replace(ref, st.session_state["contexto"][campo].lower())
+    return pregunta_modificada
+
+campos_contexto = ["DESC_TIENDA", "DESC_CANAL", "DESC_MARCA", "DESC_ARTICULO", "DESC_GENERO", "NOMBRE_CLIENTE"]
+
+def actualizar_contexto(df):
+    for campo in campos_contexto:
+        if campo in df.columns and not df[campo].isnull().all():
+            st.session_state["contexto"][campo] = str(df[campo].iloc[0])
 
 def log_interaction(pregunta, sql, resultado, feedback=None):
     try:
