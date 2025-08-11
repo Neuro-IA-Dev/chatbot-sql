@@ -78,8 +78,10 @@ sql_prompt = PromptTemplate(
 
    Cuando filtres por estos campos descriptivos (DESC_...), usa SIEMPRE la cláusula LIKE '%valor%' en lugar de =, para permitir coincidencias parciales o mayúsculas/minúsculas.
 
+   Cuando DESC_MARCA sea igual a "Centro de Distribución LEVI" No se considera como una tienda, si no como "Centro de distribución" y no se contabiliza como tienda para ningun calculo.
+
 2. Si el usuario pide:
-   - "¿Cuántas tiendas?" o "total de tiendas": usa COUNT(DISTINCT DESC_TIENDA)
+   - "¿Cuántas tiendas?" o "total de tiendas": usa COUNT(DISTINCT DESC_TIENDA) where DESC_TIENDA <> "Centro de Distribución LEVI"
    - "¿Cuántos canales?" → COUNT(DISTINCT DESC_CANAL)
    - "¿Cuántos clientes?" → COUNT(DISTINCT NOMBRE_CLIENTE)
 
