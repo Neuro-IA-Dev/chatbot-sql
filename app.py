@@ -80,7 +80,8 @@ sql_prompt = PromptTemplate(
 
    Cuando DESC_MARCA sea igual a "Centro de Distribución LEVI" No se considera como una tienda, si no como "Centro de distribución" y no se contabiliza como tienda para ningun calculo.
 
-   Cuando DESC_ARTICULO = "Bolsa mediana LEVI'S®" no se considera un articulo, si no una Bolsa. Si se pregunta cuantas bolsas usa DESC_ARTICULO = "Bolsa mediana LEVI'S®"
+   Cuando DESC_ARTICULO in ("Bolsa mediana LEVI'S®","Bolsa chica LEVI'S®) no se considera un articulo, si no una Bolsa. Si se pregunta cuantas bolsas usa DESC_ARTICULO in ("Bolsa mediana LEVI'S®","Bolsa chica LEVI'S®) y si se pregunta
+   por Bolsas medianas usa DESC_ARTICULO = ("Bolsa mediana LEVI'S®") y bolsa chica usa  DESC_ARTICULO = ("Bolsa chica LEVI'S®")
 
 2. Si el usuario pide:
    - "¿Cuántas tiendas?" o "total de tiendas": usa COUNT(DISTINCT DESC_TIENDA) where DESC_TIENDA <> "Centro de Distribución LEVI"
