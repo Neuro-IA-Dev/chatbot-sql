@@ -41,6 +41,10 @@ if st.button("🧹 Borrar historial de preguntas", key="btn_borrar_historial"):
     st.session_state["historial"] = []
     st.session_state["conversacion"] = []
     st.success("Historial de conversación borrado.")
+    
+if st.button("🔁 Reiniciar contexto", key="btn_reset_contexto"):
+    st.session_state["contexto"] = {}
+    st.info("Contexto reiniciado (tienda, canal, marca, artículo, género, cliente).")
 
 st.markdown("Haz una pregunta y el sistema generará y ejecutará una consulta SQL automáticamente.")
 
@@ -154,7 +158,9 @@ def aplicar_contexto(pregunta):
     pregunta_modificada = pregunta
     for ref, campo in referencias.items():
         if ref.lower() in pregunta.lower() and campo in st.session_state["contexto"]:
-            valor_contexto = st.session_state["contexto"][campo]
+            # Escapar cualquier carácter especial del valor recordado (comillas, +, ?, etc.)
+            valor_contexto = re.escape(st.session_state["contexto"][campo])
+            # Reemplazo case-insensitive SOLO del texto de referencia (esa tienda, ese canal, etc.)
             pregunta_modificada = re.sub(ref, valor_contexto, pregunta_modificada, flags=re.IGNORECASE)
     return pregunta_modificada
 
@@ -162,9 +168,35 @@ campos_contexto = ["DESC_TIENDA", "DESC_CANAL", "DESC_MARCA", "DESC_ARTICULO", "
 
 
 def actualizar_contexto(df):
-    for campo in campos_contexto:
-        if campo in df.columns and not df[campo].isnull().all():
-            st.session_state["contexto"][campo] = str(df[campo].iloc[0])
+    # Mapa de posibles alias -> campo canónico
+    alias = {
+        "DESC_TIENDA": ["DESC_TIENDA", "TIENDA", "Tienda"],
+        "DESC_CANAL": ["DESC_CANAL", "CANAL", "Canal"],
+        "DESC_MARCA": ["DESC_MARCA", "MARCA", "Marca"],
+        "DESC_ARTICULO": ["DESC_ARTICULO", "ARTICULO", "Artículo", "Articulo"],
+        "DESC_GENERO": ["DESC_GENERO", "GENERO", "Género", "Genero"],
+        "NOMBRE_CLIENTE": ["NOMBRE_CLIENTE", "CLIENTE", "Cliente"]
+    }
+
+    for canonico, posibles in alias.items():
+        for col in posibles:
+            if col in df.columns and not df[col].isnull().all():
+                # Guarda el primer valor no nulo visible
+                valor = str(df[col].dropna().iloc[0])
+                if valor.strip():
+                    st.session_state["contexto"][canonico] = valor
+                break
+def forzar_distinct_canal_si_corresponde(pregunta, sql_generado):
+    """
+    Si la pregunta pide el canal de una tienda (ej: '¿de qué canal es esa tienda?'),
+    envuelve el SQL en un SELECT DISTINCT para evitar filas duplicadas.
+    """
+    if re.search(r'\bcanal(es)?\b', pregunta, flags=re.IGNORECASE) and \
+       re.search(r'\btienda\b|esa tienda', pregunta, flags=re.IGNORECASE):
+        # Evitar doble DISTINCT si ya viene correcto
+        if not re.search(r'\bselect\s+distinct\b', sql_generado, flags=re.IGNORECASE):
+            return f"SELECT DISTINCT DESC_CANAL FROM ({sql_generado}) AS t"
+    return sql_generado
 
 def log_interaction(pregunta, sql, resultado, feedback=None):
     try:
@@ -239,11 +271,20 @@ if pregunta:
     if sql_query:
         st.info("🔁 Consulta reutilizada desde la cache.")
     else:
-        pregunta_con_contexto = aplicar_contexto(pregunta)
-        prompt_text = sql_prompt.format(pregunta=pregunta_con_contexto)
-        sql_query = llm.predict(prompt_text).replace("```sql", "").replace("```", "").strip()
-        embedding = obtener_embedding(pregunta)
-        guardar_en_cache_pending = embedding if embedding else None
+    # Derivar género desde la pregunta si aparece explícito (mejora de contexto)
+    if re.search(r'\b(mujer|femenin[oa])\b', pregunta, flags=re.IGNORECASE):
+        st.session_state["contexto"]["DESC_GENERO"] = "Woman"
+    elif re.search(r'\b(hombre|masculin[oa]|varón|varon|caballero)\b', pregunta, flags=re.IGNORECASE):
+        st.session_state["contexto"]["DESC_GENERO"] = "Men"
+    elif re.search(r'\bunisex\b', pregunta, flags=re.IGNORECASE):
+        st.session_state["contexto"]["DESC_GENERO"] = "Unisex"
+    pregunta_con_contexto = aplicar_contexto(pregunta)
+    prompt_text = sql_prompt.format(pregunta=pregunta_con_contexto)
+    sql_query = llm.predict(prompt_text).replace("```sql", "").replace("```", "").strip()
+    # 👇 NUEVO: forzar DISTINCT si la pregunta lo amerita
+    sql_query = forzar_distinct_canal_si_corresponde(pregunta_con_contexto, sql_query)
+    embedding = obtener_embedding(pregunta)
+    guardar_en_cache_pending = embedding if embedding else None
 
     resultado = ""
 
