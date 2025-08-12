@@ -360,9 +360,8 @@ _MONEY_KEYS = (
     r"precio|precios|car[oa]s?|barat[oa]s?|cost[eo]s?|ticket\s*promedio|valor(?:es)?)"
 )
     # Palabras que delatan pais:
-_COUNTRY_KEYS = (
-    r"(país|pais|países|paises|chile|perú|perú|bolivia|"
-)
+# Palabras que delatan país (¡arreglado el regex!):
+_COUNTRY_KEYS = r"\b(pa[ií]s(?:es)?|chile|per[uú]|bolivia)\b"
 # Palabras que delatan fechas explícitas:
 _DATE_KEYS = r"(hoy|ayer|semana|mes|año|anio|últim|ultimo|desde|hasta|entre|rango|202\d|20\d\d|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)"
 
@@ -370,8 +369,25 @@ def _tiene_moneda(texto: str) -> bool:
     # detecta si el usuario ya dijo CLP/CH$ o USD/dólar
     return bool(re.search(r"\b(clp|ch\$|pesos?)\b", texto, re.I) or re.search(r"\b(usd|d[oó]lares?)\b", texto, re.I))
 def _tiene_pais(texto: str) -> bool:
-    # detecta si el usuario ya dijo CLP/CH$ o USD/dólar
-    return bool(re.search(r"\b(Chile|Perú|Bolivia\?)\b", texto, re.I) or re.search(r"\b(usd|d[oó]lares?)\b", texto, re.I))
+    # ¿El usuario ya especificó un país explícito?
+    return bool(re.search(r"\b(chile|per[uú]|bolivia)\b", texto, re.I))
+
+def _habla_de_pais(texto: str) -> bool:
+    return bool(re.search(_COUNTRY_KEYS, texto, re.I))
+
+# Mapa utilitario para SOCIEDAD_CO
+_PAIS_MAP = {"chile": "1000", "peru": "2000", "perú": "2000", "bolivia": "3000"}
+
+def _extraer_pais(texto: str):
+    """Devuelve (codigo, etiqueta) si aparece un país en el texto, si no (None, None)."""
+    m = re.search(r"\b(chile|per[uú]|bolivia)\b", texto, re.I)
+    if not m:
+        return None, None
+    p = m.group(1).lower()
+    if p.startswith("chil"): return "1000", "Chile"
+    if p.startswith("per"):  return "2000", "Perú"
+    if p.startswith("bol"):  return "3000", "Bolivia"
+    return None, None
 def _pide_montos(texto: str) -> bool:
     return bool(re.search(_MONEY_KEYS, texto, re.I))
 
@@ -388,11 +404,10 @@ def _menciona_cd(texto: str) -> bool:
     return bool(re.search(r"centro\s+de\s+distribuci[oó]n", texto, re.I) or re.search(r"\bCD\b", texto, re.I))
 
 def _necesita_aclaracion(texto: str) -> dict:
-    """Devuelve flags de aclaración requerida."""
     return {
         "moneda": (_pide_montos(texto) and not _tiene_moneda(texto)),
-        "pais": (_habla_de_pais(texto) and not _tiene_pais(texto)),
-        "fecha": (not _tiene_fecha(texto)),
+        "pais":   (_habla_de_pais(texto) and not _tiene_pais(texto)),
+        "fecha":  (not _tiene_fecha(texto)),
         "tienda_vs_cd": (_habla_de_tienda(texto) and not _menciona_cd(texto)),
     }
 
@@ -478,7 +493,21 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
         if h is None:
             st.caption("Elige también la fecha de término para continuar.")
             st.stop()
-
+    # País
+    pais_code, pais_label = _extraer_pais(pregunta)
+    if flags["pais"]:
+        st.subheader("País")
+        if not pais_code:
+            pais_label = st.radio(
+                "¿Para qué país?",
+                options=["Chile", "Perú", "Bolivia"],
+                horizontal=True,
+                key="k_pais_radio",
+            )
+            pais_code = {"Chile": "1000", "Perú": "2000", "Bolivia": "3000"}[pais_label]
+        # Guarda para leer al confirmar
+        st.session_state["clarif_pais_code"] = pais_code
+        st.session_state["clarif_pais_label"] = pais_label
     # Tienda vs CD
     if flags["tienda_vs_cd"]:
         st.subheader("Tipo de ubicación")
@@ -488,7 +517,6 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
             key="k_excluir_cd",
         )
 
-    # Confirmar
     if st.button("✅ Continuar con estas opciones", type="primary", key="btn_continuar_opciones"):
         moneda = st.session_state.get("clarif_moneda") if flags["moneda"] else None
         d = st.session_state.get("clarif_fecha_desde") if flags["fecha"] else None
@@ -500,10 +528,18 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
         rango = (d, h) if flags["fecha"] else None
         excluir_cd = st.session_state.get("clarif_excluir_cd") if flags["tienda_vs_cd"] else None
 
+        # ← NUEVO: país
+        pais_code = st.session_state.get("clarif_pais_code") if flags["pais"] else None
+        pais_label = st.session_state.get("clarif_pais_label") if flags["pais"] else None
+
         pregunta_enriquecida = _inyectar_aclaraciones_en_pregunta(pregunta, moneda, rango, excluir_cd)
 
-        # Limpia estados para el próximo turno
-        for k in ["clarif_moneda", "clarif_fecha_desde", "clarif_fecha_hasta", "clarif_excluir_cd"]:
+        # Si hay país, explícitalo para que el modelo aplique la regla de SOCIEDAD_CO
+        if pais_code and pais_label:
+            pregunta_enriquecida += f" para {pais_label} (SOCIEDAD_CO={pais_code})"
+
+        # Limpia estados
+        for k in ["clarif_moneda","clarif_fecha_desde","clarif_fecha_hasta","clarif_excluir_cd","clarif_pais_code","clarif_pais_label"]:
             st.session_state.pop(k, None)
 
         return pregunta_enriquecida
