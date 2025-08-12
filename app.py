@@ -44,6 +44,85 @@ st.image("assets/logo_neurovia.png", width=180)
 st.title(":brain: Asistente Inteligente de Intanis Ventas Retail")
 import requests
 import io
+# --- AYUDA: "Qué puedo preguntarte" ------------------------------------------
+_HELP_TRIGGERS_RE = re.compile(
+    r"\b(qu[eé]\s+puedo\s+preguntarte|ayuda|qu[eé]\s+sabes\s+hacer|help)\b",
+    re.IGNORECASE
+)
+
+def render_help_capacidades():
+    st.markdown("## 🤖 ¿Qué puedes preguntarme?")
+    st.markdown("""
+Puedo entender preguntas de **ventas retail** y generar la **consulta SQL** adecuada sobre el **tablon `VENTAS`**, aplicando automáticamente filtros y reglas del negocio que ya definiste.
+
+---
+
+### 🧭 Tipos de preguntas frecuentes
+- **Ventas / Ingresos / Costos**  
+  *“Ventas en USD en Chile del último mes”*, *“Costos por canal en 2025”*, *“Ingresos por tienda en Perú”*.
+- **Top / Ranking / Mejor vendido**  
+  *“Artículo más vendido por unidades en Bolivia”*, *“Top 10 por país en USD”*.  
+  ➤ Para “más vendido”, **agrupo por `DESC_ARTICULO`** y uso **`UNIDADES > 0`**.
+- **Filtros por atributos descriptivos**  
+  *“Ventas de la marca Levi’s en Plaza Vespucio”*, *“Canal de esa tienda”*, *“Productos mujer”*.  
+  ➤ Siempre uso **campos `DESC_*`** (no códigos) y **`LIKE '%valor%'`**.
+- **País y moneda**  
+  *“Comparación por país del trimestre”*, *“Ventas en CLP para Chile”*.  
+  ➤ País se mapea con `SOCIEDAD_CO → Chile/Perú/Bolivia`.  
+  ➤ Si comparas **varios países**, usa **USD**. Para **un solo país**, **USD** + moneda local.
+- **Género**  
+  *“Jeans de mujer”*, *“Camisas hombre”*, *“Unisex”*.  
+  ➤ `DESC_GENERO LIKE '%woman%' | '%men%' | '%unisex%'`.
+- **Promociones**  
+  *“Ventas con promoción”*, *“Detalle de la promo”*.  
+  ➤ Código: `PROMO` — Descripción: `D_PROMO` (no nulos ⇒ vendió con promo).
+- **Tiendas / Canales / Clientes**  
+  *“¿Cuántas tiendas hay?”*, *“¿De qué canal es esa tienda?”*, *“Clientes distintos del mes”*.  
+  ➤ `COUNT(DISTINCT ...)` y **para “¿de qué canal?”** uso `SELECT DISTINCT DESC_CANAL ...`.
+- **Listados y conteos por país**  
+  *“Lista de países disponibles”*, *“¿Cuántos países hay?”*.  
+  ➤ Entrego:  
+    1) `SELECT COUNT(DISTINCT SOCIEDAD_CO) ...`  
+    2) `SELECT DISTINCT CASE SOCIEDAD_CO ... END AS PAIS ...`
+
+---
+
+### 🧱 Reglas clave que aplico (del prompt)
+- **Campos descriptivos:** “tienda, marca, canal, producto…” ⇒ `DESC_*` (no `COD_*`).  
+- **Fechas:** `FECHA_DOCUMENTO` **formato `YYYYMMDD` sin guiones**.  
+- **Unidades negativas:** son devoluciones ⇒ si se habla de ventas o “baratos”, **`UNIDADES > 0`**.  
+- **Centros de distribución:**  
+  - Nombres como *“CENTRO DE DISTRIBUCIÓN LEVI”* y *“CENTRO DISTRIBUCION LEVIS PERU”* **no** cuentan como tienda.  
+  - Puedes **excluir/incluir** CD según lo pidas.
+- **Artículo vs Servicio:**  
+  - `DESC_TIPOARTICULO = 'MODE'` ⇒ artículo  
+  - `DESC_TIPOARTICULO = 'DIEN'` o `DESC_ARTICULO = 'DESPACHO A DOMICILIO'` ⇒ servicio  
+- **Precio de venta:** considera **ingreso unitario (cantidad = 1)**.  
+- **Tipos (DESC_TIPO):** *Back Patches, Jeans, Sweaters…*  
+  - Se usan **como filtro** (`DESC_TIPO LIKE '%valor%'`)  
+  - En rankings/listados se **muestra `DESC_ARTICULO`**, salvo que pidas “por tipo”.
+- **Líneas (`DESC_LINEA`):** *Accesorios, Bottoms, Tops, Customization, Insumos*.
+- **País (SOCIEDAD_CO):**  
+  - `1000→Chile`, `2000→Perú`, `3000→Bolivia`.  
+  - Para “por país”, agrupo por `SOCIEDAD_CO` y decodifico con `CASE`.
+
+---
+
+### 📝 Ejemplos listos para usar
+- *“Ventas en USD por país entre 20250101 y 20250131”*  
+- *“¿De qué canal es esa tienda?”* (devuelve **1 fila** con `SELECT DISTINCT DESC_CANAL`)  
+- *“Top 5 artículos más vendidos (unidades > 0) en Perú en 2025”*  
+- *“Total de tiendas (excluyendo centros de distribución)”*  
+- *“Ventas de mujer en Jeans Levi’s en Chile este mes”*  
+- *“Lista de países disponibles”* (devuelve el conteo + listado)
+
+---
+
+### 🔍 Recuerda
+- Siempre puedo mostrarte la **consulta SQL** que generé.  
+- Puedo exportar resultados a **Excel** desde la app.  
+- Uso `LIKE '%valor%'` para evitar pérdidas por capitalización/acentos.
+""")
 
 def make_excel_download_bytes(df: pd.DataFrame, sheet_name="Datos"):
     """Devuelve bytes de un .xlsx con el dataframe."""
@@ -918,6 +997,14 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
 pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
 if not pregunta and st.session_state.get("pending_question"):
     pregunta = st.session_state["pending_question"]
+# --- Si el usuario pide "Qué puedo preguntarte", mostrar ayuda y no generar SQL ---
+if pregunta and _HELP_TRIGGERS_RE.search(pregunta or ""):
+    with st.chat_message("assistant"):
+        render_help_capacidades()
+    # Limpio la pending_question para que no reprocese la ayuda al siguiente render
+    st.session_state.pop("pending_question", None)
+    st.stop()
+
 
 sql_query = None
 resultado = ""
