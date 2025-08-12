@@ -27,7 +27,12 @@ def make_excel_download_bytes(df: pd.DataFrame, sheet_name="Datos"):
         df.to_excel(writer, index=False, sheet_name=sheet_name)
     bio.seek(0)
     return bio.getvalue()
-
+def _agregacion_por_pais(texto: str) -> bool:
+    # Intenciones típicas de ranking/comparación/agrupación por país
+    patrones = r"(por\s+pa[ií]s|seg[uú]n\s+pa[ií]s|ranking\s+de\s+pa[ií]ses|" \
+               r"cu[aá]l(?:es)?\s+es\s+el\s+pa[ií]s\s+que\s+(?:m[aá]s|menos)|" \
+               r"top\s+\d+\s+pa[ií]ses|comparaci[oó]n\s+por\s+pa[ií]s)"
+    return bool(re.search(patrones, texto, re.I))
 def obtener_ip_publica():
     try:
         # Evita que se quede pegado si el servicio no responde
@@ -207,6 +212,11 @@ sql_prompt = PromptTemplate(
 17. Cuando filtres por FECHA_DOCUMENTO, usa SIEMPRE formato 'YYYYMMDD' **sin guiones**. Ejemplo:
     WHERE FECHA_DOCUMENTO BETWEEN '20250101' AND '20250131'
     (La columna es numérica/texto sin guiones; NO uses '2025-01-01'.)
+
+18. Si la consulta es por país (ranking, “más vende”, “por país”, etc.):
+    - Agrupa por SOCIEDAD_CO y decodifica el nombre con:
+      CASE SOCIEDAD_CO WHEN '1000' THEN 'Chile' WHEN '2000' THEN 'Perú' WHEN '3000' THEN 'Bolivia' END AS PAIS
+
 Cuando se reemplace un valor como “ese artículo”, “esa tienda”, etc., asegúrate de utilizar siempre `LIKE '%valor%'` en lugar de `=` para evitar errores por coincidencias exactas.
 
 🔐 Recuerda usar WHERE, GROUP BY o ORDER BY cuando el usuario pregunte por filtros, agrupaciones o rankings.
@@ -406,7 +416,7 @@ def _menciona_cd(texto: str) -> bool:
 def _necesita_aclaracion(texto: str) -> dict:
     return {
         "moneda": (_pide_montos(texto) and not _tiene_moneda(texto)),
-        "pais":   (_habla_de_pais(texto) and not _tiene_pais(texto)),
+        "pais":   (habla_pais and not tiene_pais and not agrega_pais),  # ← clave
         "fecha":  (not _tiene_fecha(texto)),
         "tienda_vs_cd": (_habla_de_tienda(texto) and not _menciona_cd(texto)),
     }
