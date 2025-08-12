@@ -374,6 +374,11 @@ referencias = {
     "esa categoria de genero": "DESC_GENERO",
     "ese pais": "SOCIEDAD_CO",
     "ese país": "SOCIEDAD_CO"
+    "ese accesorio":"DESC_ARTICULO",
+    "ese bottom":"DESC_ARTICULO",
+    "ese top":"DESC_ARTICULO",
+    "ese customization":"DESC_ARTICULO",
+    "ese insumo":"DESC_ARTICULO"
 }
 
 def aplicar_contexto(pregunta):
