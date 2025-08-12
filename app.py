@@ -53,6 +53,31 @@ def _to_yyyymmdd(v) -> str:
             pass
     # si no se pudo parsear, devuelve tal cual
     return str(v)
+# --- País <-> moneda -------------------------------------------
+_LOCAL_CURRENCY_BY_SOC = {"1000": "CLP", "2000": "PEN", "3000": "BOB"}
+_SOC_BY_NAME = {"chile": "1000", "perú": "2000", "peru": "2000", "bolivia": "3000"}
+
+def _extraer_paises(texto: str) -> set[str]:
+    """Set de SOCIEDAD_CO presentes explícitamente en el texto (por nombre o código)."""
+    codes = set()
+    for k, v in _SOC_BY_NAME.items():
+        if re.search(rf"\b{k}\b", texto, re.I):
+            codes.add(v)
+    for m in re.findall(r"\b(1000|2000|3000)\b", texto):
+        codes.add(m)
+    return codes
+
+def _sugerir_monedas(paises: set[str], es_agrupado_por_pais: bool) -> list[str]:
+    # Multi-país o ranking/comparación por país -> USD
+    if es_agrupado_por_pais or len(paises) != 1:
+        return ["USD"]
+    # Un solo país -> USD + local
+    unico = next(iter(paises))
+    return ["USD", _LOCAL_CURRENCY_BY_SOC.get(unico, "USD")]
+
+# --- Moneda: detectar en el texto (agrega PEN/BOB)
+def _tiene_moneda(texto: str) -> bool:
+    return bool(re.search(r"\b(usd|clp|pen|bob|d[oó]lar(?:es)?|pesos?)\b", texto, re.I))
 
 # Ejecutar y mostrar IP saliente (útil para Remote MySQL en cPanel)
 ip_actual = obtener_ip_publica()
@@ -496,7 +521,152 @@ def _inyectar_aclaraciones_en_pregunta(pregunta: str, moneda, rango, excluir_cd)
         )
     return " ".join(partes).strip()
 
+# ===== UTILIDADES para monedas por país (agregar antes de manejar_aclaracion) =====
+_LOCAL_CURRENCY_BY_SOC = {"1000": "CLP", "2000": "PEN", "3000": "BOB"}
+_SOC_BY_NAME = {"chile": "1000", "perú": "2000", "peru": "2000", "bolivia": "3000"}
 
+def _extraer_paises(texto: str) -> set[str]:
+    """Devuelve set de SOCIEDAD_CO explícitos en el texto (por nombre o código)."""
+    codes = set()
+    for k, v in _SOC_BY_NAME.items():
+        if re.search(rf"\b{k}\b", texto, re.I):
+            codes.add(v)
+    for m in re.findall(r"\b(1000|2000|3000)\b", texto):
+        codes.add(m)
+    return codes
+
+def _sugerir_monedas(paises: set[str], es_agrupado_por_pais: bool) -> list[str]:
+    """Regla: multi-país o agrupación por país -> USD; 1 país -> USD + local."""
+    if es_agrupado_por_pais or len(paises) != 1:
+        return ["USD"]
+    unico = next(iter(paises))
+    return ["USD", _LOCAL_CURRENCY_BY_SOC.get(unico, "USD")]
+# ================================================================================
+
+
+def manejar_aclaracion(pregunta: str) -> Optional[str]:
+    """Si requiere aclaración, muestra UI y devuelve una 'pregunta enriquecida' al confirmar.
+    Si no requiere, devuelve None y el flujo sigue normal.
+    """
+    flags = _necesita_aclaracion(pregunta)
+    if not any(flags.values()):
+        return None  # no hace falta aclarar nada
+
+    st.info("Antes de ejecutar, aclaremos algunos detalles para evitar resultados ambiguos 👇")
+
+    # Estado inicial
+    st.session_state.setdefault("clarif_moneda", None)
+    st.session_state.setdefault("clarif_fecha_desde", None)
+    st.session_state.setdefault("clarif_fecha_hasta", None)
+    st.session_state.setdefault("clarif_excluir_cd", True)
+
+    # -------------------- Países detectados en el texto y sugerencia de monedas
+    paises_texto = _extraer_paises(pregunta)                      # {"1000"} / {"1000","2000"} / set()
+    es_agrupado = _agregacion_por_pais(pregunta)                  # ranking / "por país" / etc.
+    sugeridas = _sugerir_monedas(paises_texto, es_agrupado)       # ["USD"] o ["USD","CLP"/"PEN"/"BOB"]
+
+    # Monedas PERMITIDAS (regla: multi-país o ranking → solo USD; 1 país → USD + local)
+    if es_agrupado or len(paises_texto) != 1:
+        monedas_permitidas = ["USD"]
+    elif len(paises_texto) == 1:
+        local = _LOCAL_CURRENCY_BY_SOC[list(paises_texto)[0]]
+        monedas_permitidas = ["USD", local]
+    else:
+        # Si no hay país en el texto y no es agregado por país, deja todas; luego se valida
+        monedas_permitidas = ["USD", "CLP", "PEN", "BOB"]
+
+    # -------------------- Moneda
+    if flags["moneda"]:
+        st.subheader("Moneda")
+        st.session_state["clarif_moneda"] = st.multiselect(
+            "¿En qué moneda(s) quieres ver los montos?",
+            options=monedas_permitidas,        # restringe según regla/país
+            default=sugeridas,                 # sugerencia automática
+            key="k_moneda_multi",
+            help="Si comparas varios países o pides ranking por país, sólo USD."
+        )
+    else:
+        # Si el usuario no dijo moneda en el texto, proponemos por defecto
+        if st.session_state.get("clarif_moneda") is None:
+            st.session_state["clarif_moneda"] = sugeridas
+
+    # -------------------- Rango de fechas
+    if flags["fecha"]:
+        st.subheader("Rango de fechas")
+        hoy = _dt.date.today()
+        desde_def = hoy - _dt.timedelta(days=30)
+        val = st.date_input(
+            "Selecciona el rango",
+            value=(desde_def, hoy),
+            key="k_rango_fechas",
+        )
+        if isinstance(val, tuple) and len(val) == 2:
+            d, h = val
+        else:
+            d, h = val, None
+        st.session_state["clarif_fecha_desde"] = d
+        st.session_state["clarif_fecha_hasta"] = h
+        if h is None:
+            st.caption("Elige también la fecha de término para continuar.")
+            st.stop()
+
+    # -------------------- País (tu lógica existente de país explícito)
+    pais_code, pais_label = _extraer_pais(pregunta)
+    if flags.get("pais"):
+        st.subheader("País")
+        if not pais_code:
+            pais_label = st.radio(
+                "¿Para qué país?",
+                options=["Chile", "Perú", "Bolivia"],
+                horizontal=True,
+                key="k_pais_radio",
+            )
+            pais_code = {"Chile": "1000", "Perú": "2000", "Bolivia": "3000"}[pais_label]
+        st.session_state["clarif_pais_code"] = pais_code
+        st.session_state["clarif_pais_label"] = pais_label
+
+    # -------------------- Tienda vs CD
+    if flags["tienda_vs_cd"]:
+        st.subheader("Tipo de ubicación")
+        st.session_state["clarif_excluir_cd"] = st.checkbox(
+            "Excluir Centros de Distribución (CD)",
+            value=True,
+            key="k_excluir_cd",
+        )
+
+    # -------------------- Confirmar
+    if st.button("✅ Continuar con estas opciones", type="primary", key="btn_continuar_opciones"):
+        moneda_sel = st.session_state.get("clarif_moneda")   # lista o None
+        d = st.session_state.get("clarif_fecha_desde") if flags["fecha"] else None
+        h = st.session_state.get("clarif_fecha_hasta") if flags["fecha"] else None
+        if flags["fecha"] and (d is None or h is None):
+            st.warning("Falta completar el rango de fechas.")
+            st.stop()
+
+        rango = (d, h) if flags["fecha"] else None
+        excluir_cd = st.session_state.get("clarif_excluir_cd") if flags["tienda_vs_cd"] else None
+
+        # País elegido en UI (si aplica)
+        pais_code_ui = st.session_state.get("clarif_pais_code") if flags.get("pais") else None
+        pais_label_ui = st.session_state.get("clarif_pais_label") if flags.get("pais") else None
+
+        # Construir la pregunta enriquecida (tu función actual acepta un valor; convertimos lista->texto)
+        moneda_txt = ", ".join(moneda_sel) if isinstance(moneda_sel, (list, tuple, set)) else moneda_sel
+        pregunta_enriquecida = _inyectar_aclaraciones_en_pregunta(pregunta, moneda_txt, rango, excluir_cd)
+
+        # Si hay país, explícitalo para que el modelo aplique SOCIEDAD_CO
+        if pais_code_ui and pais_label_ui:
+            pregunta_enriquecida += f" para {pais_label_ui} (SOCIEDAD_CO={pais_code_ui})"
+
+        # Limpiar estados
+        for k in ["clarif_moneda","clarif_fecha_desde","clarif_fecha_hasta",
+                  "clarif_excluir_cd","clarif_pais_code","clarif_pais_label"]:
+            st.session_state.pop(k, None)
+
+        return pregunta_enriquecida
+
+    # Si aún no confirma, detenemos el flujo principal y la app se re-renderiza
+    st.stop()
 # UI de aclaración (usa st.session_state para ciclar hasta que el usuario confirme)
 def manejar_aclaracion(pregunta: str) -> Optional[str]:
     """Si requiere aclaración, muestra UI y devuelve una 'pregunta enriquecida' al confirmar.
