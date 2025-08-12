@@ -48,16 +48,19 @@ def _detectar_tipo_en_texto(texto: str) -> str | None:
     return None
 
 def _anotar_tipo_en_pregunta(pregunta: str) -> str:
+    # Si el usuario dice "ese ..." y tenemos ARTÍCULO en contexto, no guiar por TIPO
+    if re.search(r"\bese\b", pregunta, re.I) and "DESC_ARTICULO" in st.session_state.get("contexto", {}):
+        return pregunta
+
     t = _detectar_tipo_en_texto(pregunta)
     if not t:
         return pregunta
 
     guia = (f" (Filtrar con DESC_TIPO LIKE '%{t}%'. Considerar UNIDADES > 0 al hablar de ventas.)")
-    # Si la intención es "más vendido/top/ranking", forzar que muestre DESC_ARTICULO
     if re.search(r"(más\s+vendid[oa]|mas\s+vendid[oa]|top|ranking|mejor\s+vendid[oa])", pregunta, re.I):
         guia += (" Mostrar y agrupar por DESC_ARTICULO (no por DESC_TIPO), "
                  "ordenar por SUM(UNIDADES) DESC y usar LIMIT 1 si procede.")
-    return (pregunta.strip() + guia)
+    return pregunta.strip() + guia
 
 
 def obtener_ip_publica():
@@ -420,23 +423,30 @@ referencias = {
     "ese bottom":"DESC_ARTICULO",
     "ese top":"DESC_ARTICULO",
     "ese customization":"DESC_ARTICULO",
-    "ese insumo":"DESC_ARTICULO"
+    "ese insumo":"DESC_ARTICULO",
+    # Prioriza ARTICULO sobre TIPO
+    "ese pin": ["DESC_ARTICULO", "DESC_TIPO"],
+    "ese producto": ["DESC_ARTICULO", "DESC_TIPO"],
+    "ese artículo": ["DESC_ARTICULO", "DESC_TIPO"],
+    "ese articulo": ["DESC_ARTICULO", "DESC_TIPO"],
 }
 referencias.update({
     "ese tipo": "DESC_TIPO",
     "ese categoria de tipo": "DESC_TIPO",
 })
 
-def aplicar_contexto(pregunta):
-    # ⬅️ evita AttributeError si llega None o vacío
-    if not isinstance(pregunta, str) or not pregunta.strip():
-        return pregunta
-    pregunta_modificada = pregunta
-    for ref, campo in referencias.items():
-        if ref.lower() in pregunta.lower() and campo in st.session_state["contexto"]:
-            valor_contexto = re.escape(st.session_state["contexto"][campo])
-            pregunta_modificada = re.sub(ref, valor_contexto, pregunta_modificada, flags=re.IGNORECASE)
-    return pregunta_modificada
+def aplicar_contexto(pregunta: str) -> str:
+    pregunta_mod = pregunta
+    lower_q = pregunta.lower()
+    for ref, campos in referencias.items():
+        if ref in lower_q:
+            # toma el primer campo disponible en contexto (prioridad)
+            for campo in campos:
+                if campo in st.session_state.get("contexto", {}):
+                    val = re.escape(st.session_state["contexto"][campo])
+                    pregunta_mod = re.sub(ref, val, pregunta_mod, flags=re.IGNORECASE)
+                    break
+    return pregunta_mod
 
 
 campos_contexto = [
@@ -458,17 +468,36 @@ def actualizar_contexto(df):
         "SOCIEDAD_CO": ["PAIS", "PAISES", "Pais","Paises","Países","País"]
     }
 
+def actualizar_contexto(df: pd.DataFrame):
+    alias = {
+        "DESC_TIENDA": ["DESC_TIENDA", "TIENDA", "Tienda"],
+        "DESC_CANAL": ["DESC_CANAL", "CANAL", "Canal"],
+        "DESC_MARCA": ["DESC_MARCA", "MARCA", "Marca"],
+        "DESC_ARTICULO": ["DESC_ARTICULO", "ARTICULO", "Artículo", "Articulo"],
+        "DESC_GENERO": ["DESC_GENERO", "GENERO", "Género", "Genero"],
+        "DESC_TIPO": ["DESC_TIPO", "TIPO", "Tipo"],
+        "NOMBRE_CLIENTE": ["NOMBRE_CLIENTE", "CLIENTE", "Cliente"],
+        "SOCIEDAD_CO": ["PAIS", "PAISES", "Pais","Paises","Países","País"]
+    }
+
+    articulo_capturado = False
+
     for canonico, posibles in alias.items():
         for col in posibles:
             if col in df.columns and not df[col].isnull().all():
                 valor = str(df[col].dropna().iloc[0]).strip()
                 if not valor:
                     continue
-                # ⬇️ NUEVO: no persistir CDs en contexto
                 if canonico == "DESC_TIENDA" and es_centro_distribucion(valor):
                     continue
-                st.session_state["contexto"][canonico] = valor
+                st.session_state.setdefault("contexto", {})[canonico] = valor
+                if canonico == "DESC_ARTICULO":
+                    articulo_capturado = True
                 break
+
+    # Si guardamos un ARTICULO, limpiamos TIPO para que no interfiera
+    if articulo_capturado and "DESC_TIPO" in st.session_state["contexto"]:
+        st.session_state["contexto"].pop("DESC_TIPO", None)
 def forzar_distinct_canal_si_corresponde(pregunta, sql_generado):
     """
     Si la pregunta pide el canal de una tienda (ej: '¿de qué canal es esa tienda?'),
