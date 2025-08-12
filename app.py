@@ -1065,35 +1065,40 @@ if pregunta:
         embedding = obtener_embedding(pregunta)
         guardar_en_cache_pending = embedding if embedding else None
 
-# ==== Chips/pills de contexto para mostrar junto al SQL ====
+# ==== Chips/píldoras de contexto (siempre sincronizados con la pregunta actual) ====
 chips = []
 
-# Moneda
+# Usa la pregunta enriquecida si existe; si no, usa la pregunta tal cual
+# (locals().get evita NameError cuando no se definió pregunta_con_contexto)
+_pregunta_ctx = locals().get("pregunta_con_contexto", pregunta)
+
+# Moneda confirmada/sugerida
 mon_last = st.session_state.get("clarif_moneda_last")
-if isinstance(mon_last, list):
+if isinstance(mon_last, list) and mon_last:
     chips.append(f"Moneda: {', '.join(mon_last)}")
-elif mon_last:
+elif isinstance(mon_last, str) and mon_last:
     chips.append(f"Moneda: {mon_last}")
 
-# Rango de fechas (si viene “YYYYMMDD … YYYYMMDD” en la pregunta enriquecida)
-m = re.search(r"FECHA_DOCUMENTO entre (\d{8}) y (\d{8})", pregunta_con_contexto, re.I)
+# Rango de fechas si fue inyectado (YYYYMMDD)
+m = re.search(r"FECHA_DOCUMENTO entre (\d{8}) y (\d{8})", _pregunta_ctx, re.I)
 if m:
     chips.append(f"Rango: {m.group(1)} → {m.group(2)}")
 
-# Exclusión de CD
-if "excluyendo el Centro de Distribución" in pregunta_con_contexto:
+# Inclusión/Exclusión de CD
+if "excluyendo el Centro de Distribución" in _pregunta_ctx:
     chips.append("CDs excluidos")
-elif "incluyendo el Centro de Distribución" in pregunta_con_contexto:
+elif "incluyendo el Centro de Distribución" in _pregunta_ctx:
     chips.append("CDs incluidos")
 
-# Pistas de país si quedaron seteadas
+# País (si el aclarador lo dejó seteado)
 if "clarif_pais_label" in st.session_state:
     chips.append(f"País: {st.session_state['clarif_pais_label']}")
 
-
+# Si tenías una lista de tiendas capturada
 tiendas_list = st.session_state.get("contexto", {}).get("DESC_TIENDA_LIST")
 if isinstance(tiendas_list, list) and tiendas_list:
     chips.append(f"Tiendas: {len(tiendas_list)} seleccionada(s)")
+
 # 6) Ejecutar SQL (soporta múltiples SELECT separados por ';') — SOLO si hay SQL
 if pregunta and isinstance(sql_query, str) and sql_query.strip():
     try:
