@@ -370,8 +370,25 @@ _MONEY_KEYS = (
     r"precio|precios|car[oa]s?|barat[oa]s?|cost[eo]s?|ticket\s*promedio|valor(?:es)?)"
 )
     # Palabras que delatan pais:
-# Palabras que delatan país (¡arreglado el regex!):
-_COUNTRY_KEYS = r"\b(pa[ií]s(?:es)?|chile|per[uú]|bolivia)\b"
+# --- País: detectores ----------------------------------------
+_COUNTRY_WORDS = r"\b(chile|per[uú]|bolivia|pa[ií]s(?:es)?)\b"
+
+def _habla_de_pais(texto: str) -> bool:
+    # ¿se menciona la noción de país en general?
+    return bool(re.search(_COUNTRY_WORDS, texto, re.I))
+
+def _tiene_pais(texto: str) -> bool:
+    # ¿viene un país explícito (por nombre o código SOCIEDAD_CO)?
+    return bool(re.search(r"\b(1000|2000|3000|chile|per[uú]|bolivia)\b", texto, re.I))
+
+def _agregacion_por_pais(texto: str) -> bool:
+    # intenciones de ranking/agrupación/comparación por país
+    patrones = (
+        r"(por\s+pa[ií]s|seg[uú]n\s+pa[ií]s|ranking\s+de\s+pa[ií]ses|"
+        r"top\s+\d+\s+pa[ií]ses|comparaci[oó]n\s+por\s+pa[ií]s|"
+        r"cu[aá]l(?:es)?\s+es\s+el\s+pa[ií]s\s+que\s+(?:m[aá]s|menos))"
+    )
+    return bool(re.search(patrones, texto, re.I))
 # Palabras que delatan fechas explícitas:
 _DATE_KEYS = r"(hoy|ayer|semana|mes|año|anio|últim|ultimo|desde|hasta|entre|rango|202\d|20\d\d|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)"
 
@@ -414,9 +431,15 @@ def _menciona_cd(texto: str) -> bool:
     return bool(re.search(r"centro\s+de\s+distribuci[oó]n", texto, re.I) or re.search(r"\bCD\b", texto, re.I))
 
 def _necesita_aclaracion(texto: str) -> dict:
+    habla_pais  = _habla_de_pais(texto)
+    tiene_pais  = _tiene_pais(texto)
+    agrega_pais = _agregacion_por_pais(texto)
+
     return {
         "moneda": (_pide_montos(texto) and not _tiene_moneda(texto)),
-        "pais":   (habla_pais and not tiene_pais and not agrega_pais),  # ← clave
+        # Solo preguntamos "País" si se habla de país, NO hay uno explícito
+        # y NO es una intención de ranking/agrupación por país.
+        "pais":   (habla_pais and not tiene_pais and not agrega_pais),
         "fecha":  (not _tiene_fecha(texto)),
         "tienda_vs_cd": (_habla_de_tienda(texto) and not _menciona_cd(texto)),
     }
