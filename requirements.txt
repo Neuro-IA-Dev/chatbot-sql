@@ -17,10 +17,10 @@ openai>=1.0.0
 pypdf
 python-docx
 tiktoken
-
+openpyxl>=3.1.0
 # Vectorstore en memoria
 faiss-cpu
-
+XlsxWriter>=3.1.9
 # App web
 streamlit
 
