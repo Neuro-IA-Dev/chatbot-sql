@@ -91,7 +91,14 @@ def es_centro_distribucion(nombre: str) -> bool:
     t = nombre.strip().upper()
     # match exacto o por inclusión (por si vienen sufijos/prefijos)
     return any(x == t or x in t for x in CD_EXCLUSIONES)
-
+    
+def forzar_distinct_pais_si_corresponde(pregunta, sql_generado):
+    if re.search(r'\bpa[ií]s\b', pregunta, re.I) and \
+       st.session_state.get("__last_ref_replacement__") in ("DESC_TIENDA", "DESC_TIENDA_LIST"):
+        if not re.search(r'\bselect\s+distinct\b', sql_generado, re.I):
+            return f"SELECT DISTINCT PAIS FROM ({sql_generado}) AS t"
+    return sql_generado
+    
 def aplicar_formato_monetario(df: pd.DataFrame) -> pd.DataFrame:
     """Formatea columnas monetarias: 7.765.093,83 y agrega sufijo de moneda.
        Detecta columnas por nombre 'dinero-like' y por tipo numérico.
@@ -428,13 +435,31 @@ referencias = {
 referencias.update({
     "ese tipo": "DESC_TIPO",
     "ese categoria de tipo": "DESC_TIPO",
+    "esa tienda": "DESC_TIENDA",
+    "estas tiendas": "DESC_TIENDA",   # nuevo (plural con “estas”)
+    "esas tiendas": "DESC_TIENDA",    # nuevo (plural con “esas”)
 })
 
 def aplicar_contexto(pregunta: str) -> str:
     pregunta_mod = pregunta
     lower_q = pregunta.lower()
-    st.session_state["__last_ref_replacement__"] = None  # reset
+    st.session_state["__last_ref_replacement__"] = None
 
+    # --- manejo especial: "esas/estas tiendas" -> usar lista previa ---
+    if ("esas tiendas" in lower_q or "estas tiendas" in lower_q) and \
+       "DESC_TIENDA_LIST" in st.session_state.get("contexto", {}):
+        lista = st.session_state["contexto"]["DESC_TIENDA_LIST"]
+        # escapa comillas simples
+        lista_sql = "', '".join(s.replace("'", "''") for s in lista)
+        # Anotación guía para el generador SQL
+        guia_in = f" (Filtrar con DESC_TIENDA IN ('{lista_sql}'))"
+        pregunta_mod = re.sub(r"(esas|estas)\s+tiendas", "las tiendas indicadas", pregunta_mod, flags=re.I)
+        pregunta_mod += guia_in
+        # marca que el reemplazo fue por tiendas (para saltarse aclaraciones)
+        st.session_state["__last_ref_replacement__"] = "DESC_TIENDA_LIST"
+        st.session_state["__last_ref_value__"] = lista
+
+    # --- tu lógica existente de referencias singulares ---
     for ref, campos in referencias.items():
         if ref in lower_q:
             for campo in campos if isinstance(campos, list) else [campos]:
@@ -445,6 +470,7 @@ def aplicar_contexto(pregunta: str) -> str:
                     st.session_state["__last_ref_replacement__"] = campo
                     st.session_state["__last_ref_value__"] = val_original
                     break
+
     return pregunta_mod
 
 
@@ -454,18 +480,6 @@ campos_contexto = [
 ]
 
 
-def actualizar_contexto(df):
-    # Mapa de posibles alias -> campo canónico
-    alias = {
-        "DESC_TIENDA": ["DESC_TIENDA", "TIENDA", "Tienda"],
-        "DESC_CANAL": ["DESC_CANAL", "CANAL", "Canal"],
-        "DESC_MARCA": ["DESC_MARCA", "MARCA", "Marca"],
-        "DESC_ARTICULO": ["DESC_ARTICULO", "ARTICULO", "Artículo", "Articulo"],
-        "DESC_GENERO": ["DESC_GENERO", "GENERO", "Género", "Genero"],
-        "DESC_TIPO": ["DESC_TIPO", "TIPO", "Tipo"],
-        "NOMBRE_CLIENTE": ["NOMBRE_CLIENTE", "CLIENTE", "Cliente"],
-        "SOCIEDAD_CO": ["PAIS", "PAISES", "Pais","Paises","Países","País"]
-    }
 
 def actualizar_contexto(df: pd.DataFrame):
     alias = {
@@ -478,7 +492,19 @@ def actualizar_contexto(df: pd.DataFrame):
         "NOMBRE_CLIENTE": ["NOMBRE_CLIENTE", "CLIENTE", "Cliente"],
         "SOCIEDAD_CO": ["PAIS", "PAISES", "Pais","Paises","Países","País"]
     }
-
+    # Guardar una LISTA de tiendas (excluyendo CDs)
+    if "DESC_TIENDA" in df.columns:
+        tiendas = (
+            df["DESC_TIENDA"]
+            .dropna()
+            .astype(str)
+            .map(str.strip)
+            .unique()
+            .tolist()
+        )
+        tiendas = [t for t in tiendas if t and not es_centro_distribucion(t)]
+        if tiendas:
+            st.session_state.setdefault("contexto", {})["DESC_TIENDA_LIST"] = tiendas
     articulo_capturado = False
 
     for canonico, posibles in alias.items():
@@ -679,10 +705,14 @@ def _necesita_aclaracion(texto: str) -> dict:
     agrega_pais = _agregacion_por_pais(texto)
     conteo_o_listado = _solo_conteo_o_listado_de_paises(texto)
 
+    # NUEVO: referencia a lista de tiendas capturada
+    ref_tiendas = (("esas tiendas" in texto.lower()) or ("estas tiendas" in texto.lower())) and \
+                  ("DESC_TIENDA_LIST" in st.session_state.get("contexto", {}))
+
     return {
         "moneda": (_pide_montos(texto) and not _tiene_moneda(texto)),
-        # NO pedir país si es conteo/listado de países
-        "pais":   (habla_pais and not tiene_pais and not agrega_pais and not conteo_o_listado),
+        # NO pedir país si es conteo/listado… y TAMPOCO si refiere a "esas tiendas"
+        "pais":   (habla_pais and not tiene_pais and not agrega_pais and not conteo_o_listado and not ref_tiendas),
         "fecha":  (not _tiene_fecha(texto)),
         "tienda_vs_cd": (_habla_de_tienda(texto) and not _menciona_cd(texto)),
     }
