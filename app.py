@@ -319,6 +319,149 @@ def buscar_sql_en_cache(pregunta_nueva, umbral_similitud=0.90):
         st.warning(f"❌ Error buscando en cache: {e}")
     return None
 
+# ==== DESAMBIGUACIÓN: detectores y UI ========================================
+
+import datetime as _dt
+from typing import Optional, Tuple
+
+# Palabras que delatan montos:
+_MONEY_KEYS = r"(venta|ventas|ingreso|ingresos|margen|utilidad|gm|revenue|sales|facturaci[oó]n)"
+# Palabras que delatan fechas explícitas:
+_DATE_KEYS = r"(hoy|ayer|semana|mes|año|anio|últim|ultimo|desde|hasta|entre|rango|202\d|20\d\d|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)"
+
+def _tiene_moneda(texto: str) -> bool:
+    # detecta si el usuario ya dijo CLP/CH$ o USD/dólar
+    return bool(re.search(r"\b(clp|ch\$|pesos?)\b", texto, re.I) or re.search(r"\b(usd|d[oó]lares?)\b", texto, re.I))
+
+def _pide_montos(texto: str) -> bool:
+    return bool(re.search(_MONEY_KEYS, texto, re.I))
+
+def _tiene_fecha(texto: str) -> bool:
+    return bool(re.search(_DATE_KEYS, texto, re.I))
+
+def _habla_de_tienda(texto: str) -> bool:
+    return bool(re.search(r"\btienda(s)?\b", texto, re.I))
+
+def _menciona_cd(texto: str) -> bool:
+    # si el usuario ya dijo explícitamente CD o ese nombre, no preguntamos
+    return bool(re.search(r"centro\s+de\s+distribuci[oó]n", texto, re.I) or re.search(r"\bCD\b", texto, re.I))
+
+def _necesita_aclaracion(texto: str) -> dict:
+    """Devuelve flags de aclaración requerida."""
+    return {
+        "moneda": (_pide_montos(texto) and not _tiene_moneda(texto)),
+        "fecha": (not _tiene_fecha(texto)),
+        "tienda_vs_cd": (_habla_de_tienda(texto) and not _menciona_cd(texto)),
+    }
+
+def _defaults_fecha() -> Tuple[str, str, str]:
+    """Rango por defecto: últimos 30 días, en formato dd/mm/yyyy + yyyyMMdd."""
+    hoy = _dt.date.today()
+    desde = hoy - _dt.timedelta(days=30)
+    # Para mostrar:
+    desde_str = desde.strftime("%d/%m/%Y")
+    hasta_str = hoy.strftime("%d/%m/%Y")
+    # Para SQL (si luego quisieras inyectar literal):
+    desde_sql = desde.strftime("%Y%m%d")
+    hasta_sql = hoy.strftime("%Y%m%d")
+    return desde_str, hasta_str, f"{desde_sql}-{hasta_sql}"
+
+def _inyectar_aclaraciones_en_pregunta(pregunta: str, moneda: Optional[str], rango: Optional[Tuple[str,str]], excluir_cd: Optional[bool]) -> str:
+    partes = [pregunta.strip()]
+
+    if moneda:
+        if moneda == "CLP":
+            partes.append(" en moneda CLP")
+        elif moneda == "USD":
+            partes.append(" en moneda USD")
+
+    if rango:
+        d, h = rango
+        partes.append(f" entre {d} y {h}")
+
+    if excluir_cd is not None:
+        if excluir_cd:
+            partes.append(" excluyendo el Centro de Distribución")
+        else:
+            partes.append(" incluyendo el Centro de Distribución")
+
+    return " ".join(partes).strip()
+
+# UI de aclaración (usa st.session_state para ciclar hasta que el usuario confirme)
+def manejar_aclaracion(pregunta: str) -> Optional[str]:
+    """
+    Si requiere aclaración, muestra UI y devuelve una 'pregunta enriquecida' cuando el usuario confirma.
+    Si no requiere, devuelve None (para que sigas el flujo normal).
+    """
+    flags = _necesita_aclaracion(pregunta)
+
+    if not any(flags.values()):
+        return None  # sin aclaración
+
+    st.info("Antes de ejecutar, aclaremos algunos detalles para evitar resultados ambiguos 👇")
+
+    # Estado para recordar selecciones
+    st.session_state.setdefault("clarif_moneda", None)
+    st.session_state.setdefault("clarif_fecha_desde", None)
+    st.session_state.setdefault("clarif_fecha_hasta", None)
+    st.session_state.setdefault("clarif_excluir_cd", True)  # por defecto: excluir CD
+
+    # Moneda
+    if flags["moneda"]:
+        st.subheader("Moneda")
+        st.session_state["clarif_moneda"] = st.radio(
+            "¿En qué moneda quieres el cálculo?",
+            options=["CLP", "USD"],
+            horizontal=True,
+            key="k_moneda_radio"
+        )
+
+    # Fecha
+    if flags["fecha"]:
+        st.subheader("Rango de fechas")
+        d_def, h_def, _ = _defaults_fecha()
+        col1, col2 = st.columns(2)
+        with col1:
+            st.session_state["clarif_fecha_desde"] = st.text_input("Desde (dd/mm/aaaa)", value=d_def, key="k_fecha_desde")
+        with col2:
+            st.session_state["clarif_fecha_hasta"] = st.text_input("Hasta (dd/mm/aaaa)", value=h_def, key="k_fecha_hasta")
+        st.caption("Tip: puedes escribir '01/01/2024' y '31/12/2024' por ejemplo.")
+
+    # Tienda vs CD
+    if flags["tienda_vs_cd"]:
+        st.subheader("¿Centro de distribución?")
+        st.session_state["clarif_excluir_cd"] = st.checkbox(
+            "Excluir 'Centro de Distribución LEVI' de los cálculos (recomendado)",
+            value=True,
+            key="k_excluir_cd"
+        )
+
+    # Confirmar
+    if st.button("✅ Continuar con estas opciones", type="primary"):
+        moneda = st.session_state.get("clarif_moneda")
+        if not flags["moneda"]:
+            moneda = None
+
+        if flags["fecha"]:
+            d = st.session_state.get("clarif_fecha_desde")
+            h = st.session_state.get("clarif_fecha_hasta")
+            rango = (d, h)
+        else:
+            rango = None
+
+        excluir_cd = st.session_state.get("clarif_excluir_cd") if flags["tienda_vs_cd"] else None
+
+        pregunta_enriquecida = _inyectar_aclaraciones_en_pregunta(pregunta, moneda, rango, excluir_cd)
+
+        # Limpia el estado de aclaración para el próximo turno
+        for k in ["clarif_moneda", "clarif_fecha_desde", "clarif_fecha_hasta", "clarif_excluir_cd"]:
+            if k in st.session_state:
+                del st.session_state[k]
+
+        return pregunta_enriquecida
+
+    # Mientras no confirme, detenemos el flujo principal
+    st.stop()
 
 # ENTRADA DEL USUARIO
 pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
@@ -329,7 +472,12 @@ resultado = ""
 guardar_en_cache_pending = None
 
 if pregunta:
-    with st.chat_message("user"):
+    # ⬇️ NUEVO: pedir aclaraciones si hace falta
+    pregunta_clara = manejar_aclaracion(pregunta)
+    if pregunta_clara:
+        # Reemplaza la pregunta original por la enriquecida
+        pregunta = pregunta_clara
+        with st.chat_message("user"):
         st.markdown(pregunta)
 
     # 1) Intentar reutilizar desde la cache semántica
