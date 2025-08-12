@@ -373,7 +373,7 @@ referencias = {
     "esa categoría de género": "DESC_GENERO",
     "esa categoria de genero": "DESC_GENERO",
     "ese pais": "SOCIEDAD_CO",
-    "ese país": "SOCIEDAD_CO"
+    "ese país": "SOCIEDAD_CO",
     "ese accesorio":"DESC_ARTICULO",
     "ese bottom":"DESC_ARTICULO",
     "ese top":"DESC_ARTICULO",
