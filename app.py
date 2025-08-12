@@ -217,7 +217,6 @@ if st.button("🔁 Reiniciar contexto", key="btn_reset_contexto"):
 st.markdown("Haz una pregunta y el sistema generará y ejecutará una consulta SQL automáticamente.")
 if _es_meta_paises(pregunta):
     pregunta += " Nota: Si la pregunta es 'cuántos países hay' o 'lista/descripcion de países', no filtres por MONEDA y devuelve DOS SELECTs: (1) conteo de países distintos; (2) listado DISTINCT del CASE SOCIEDAD_CO->nombre de país."
-
 llm = ChatOpenAI(
     model_name="gpt-4o",
     temperature=0,
