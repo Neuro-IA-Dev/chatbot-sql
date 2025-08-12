@@ -136,15 +136,6 @@ def aplicar_formato_monetario(df: pd.DataFrame) -> pd.DataFrame:
     return df2
 
 
-def aplicar_formato_monetario(df: pd.DataFrame) -> pd.DataFrame:
-    if df is None or df.empty:
-        return df
-    # columnas candidatos
-    money_cols = [c for c in df.columns if c.upper() in (
-        "INGRESOS","COSTOS","PRECIO","PRECIO_PROMEDIO","MARGEN","GM","VALOR","VALORES","TOTAL"
-    )]
-    if not money_cols:
-        return df
 
     df2 = df.copy()
     if "MONEDA" in df2.columns:
@@ -909,41 +900,41 @@ if pregunta:
         elif re.search(r'\bunisex\b', pregunta, flags=re.IGNORECASE):
             st.session_state["contexto"]["DESC_GENERO"] = "Unisex"
 
-# 3) Aplicar contexto y guía de TIPO
-pregunta_con_contexto = aplicar_contexto(pregunta)
+        # 3) Aplicar contexto y guía de TIPO  ⬇⬇⬇ TODO este bloque re-indentar aquí
+        pregunta_con_contexto = aplicar_contexto(pregunta)
 
-# Si el pronombre se resolvió a ARTÍCULO, obliga a filtrar por DESC_ARTICULO
-# y prohíbe usar DESC_TIPO en esta consulta.
-if st.session_state.get("__last_ref_replacement__") == "DESC_ARTICULO":
-    art_val = st.session_state.get("__last_ref_value__", "")
-    if art_val:
-        pregunta_con_contexto += (
-            f" Usa estrictamente DESC_ARTICULO LIKE '%{art_val}%' (case-insensitive) "
-            f"y UNIDADES > 0. No uses DESC_TIPO para este filtro."
-        )
+        # Si el pronombre se resolvió a ARTÍCULO, forzar DESC_ARTICULO y no usar DESC_TIPO
+        if st.session_state.get("__last_ref_replacement__") == "DESC_ARTICULO":
+            art_val = st.session_state.get("__last_ref_value__", "")
+            if art_val:
+                pregunta_con_contexto += (
+                    f" Usa estrictamente DESC_ARTICULO LIKE '%{art_val}%' (case-insensitive) "
+                    f"y UNIDADES > 0. No uses DESC_TIPO para este filtro."
+                )
 
-# Añade guía de TIPO solo si corresponde (no pisa el caso artículo)
-pregunta_con_contexto = _anotar_tipo_en_pregunta(pregunta_con_contexto)
+        # Añade guía de TIPO solo si aplica
+        pregunta_con_contexto = _anotar_tipo_en_pregunta(pregunta_con_contexto)
 
-# Si la pregunta es “meta países”, NO pidas moneda/país y agrega los dos SELECTs
-if _solo_conteo_o_listado_de_paises(pregunta_con_contexto):
-    pregunta_con_contexto += (
-        " Nota: Si la pregunta es 'cuántos países hay' o 'lista/descripcion de países', "
-        "no filtres por MONEDA y devuelve DOS SELECTs: "
-        "(1) SELECT COUNT(DISTINCT SOCIEDAD_CO) AS TOTAL_PAISES FROM VENTAS; "
-        "(2) SELECT DISTINCT CASE SOCIEDAD_CO WHEN '1000' THEN 'Chile' "
-        "WHEN '2000' THEN 'Perú' WHEN '3000' THEN 'Bolivia' END AS PAIS FROM VENTAS;"
-    )
+        # Caso “meta países”
+        if _solo_conteo_o_listado_de_paises(pregunta_con_contexto):
+            pregunta_con_contexto += (
+                " Nota: Si la pregunta es 'cuántos países hay' o 'lista/descripcion de países', "
+                "no filtres por MONEDA y devuelve DOS SELECTs: "
+                "(1) SELECT COUNT(DISTINCT SOCIEDAD_CO) AS TOTAL_PAISES FROM VENTAS; "
+                "(2) SELECT DISTINCT CASE SOCIEDAD_CO WHEN '1000' THEN 'Chile' "
+                "WHEN '2000' THEN 'Perú' WHEN '3000' THEN 'Bolivia' END AS PAIS FROM VENTAS;"
+            )
 
-prompt_text = sql_prompt.format(pregunta=pregunta_con_contexto)
-sql_query = llm.predict(prompt_text).replace("```sql", "").replace("```", "").strip()
+        prompt_text = sql_prompt.format(pregunta=pregunta_con_contexto)
+        sql_query = llm.predict(prompt_text).replace("```sql", "").replace("```", "").strip()
 
-# 4) Forzar DISTINCT si corresponde
-sql_query = forzar_distinct_canal_si_corresponde(pregunta_con_contexto, sql_query)
+        # 4) Forzar DISTINCT si corresponde
+        sql_query = forzar_distinct_canal_si_corresponde(pregunta_con_contexto, sql_query)
 
-# 5) Preparar guardado en cache
-embedding = obtener_embedding(pregunta)
-guardar_en_cache_pending = embedding if embedding else None
+        # 5) Preparar guardado en cache
+        embedding = obtener_embedding(pregunta)
+        guardar_en_cache_pending = embedding if embedding else None
+
 
 
 
