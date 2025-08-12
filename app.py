@@ -1,4 +1,4 @@
-
+# -*- coding: utf-8 -*-
 import os
 import json
 import numpy as np
@@ -16,6 +16,30 @@ _COUNTRY_REGEX = r"\b(chile|per[uú]|bolivia|pa[ií]s(?:es)?)\b"
 
 # CONFIG STREAMLIT
 st.set_page_config(page_title="Asistente Inteligente de Ventas Retail", page_icon="🧠")
+
+# ==== Estilos adicionales seguros (solo CSS/HTML) ====
+st.markdown(
+    """
+<style>
+/* Contenedor más angosto y centrado */
+.block-container { max-width: 1100px; padding-top: .75rem; }
+/* Fuente */
+html, body, [class*="css"] { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+/* Chips/píldoras */
+.pill {
+  display:inline-block; padding:4px 10px; border-radius:999px;
+  border:1px solid #2b3340; background:#0e1116; color:#aab3c5; font-size:12px; margin-right:6px;
+}
+.pill b { color:#e2e8f0; }
+/* Bloque de código */
+.stCode { border-radius: 12px !important; border: 1px solid #1f2530; }
+/* Tablas hover */
+.dataframe tbody tr:hover { background: rgba(96,165,250,.08); }
+</style>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.image("assets/logo_neurovia.png", width=180)
 st.title(":brain: Asistente Inteligente de Intanis Ventas Retail")
 import requests
@@ -43,7 +67,7 @@ def _detectar_tipo_en_texto(texto: str) -> str | None:
     for k, original in _TIPOS_SET.items():
         # coincidencia por palabra o subcadena completa segura
         # (Back Patches y Packing Bags tienen espacio; usamos 'in' con cuidado)
-        if re.search(rf"\b{re.escape(k)}\b", tx) or k in tx:
+        if re.search(rf"\\b{re.escape(k)}\\b", tx) or k in tx:
             return original
     return None
 
@@ -59,7 +83,7 @@ def _anotar_tipo_en_pregunta(pregunta: str) -> str:
         return pregunta
 
     guia = (f" (Filtrar con DESC_TIPO LIKE '%{t}%'. Considerar UNIDADES > 0 al hablar de ventas.)")
-    if re.search(r"(más\s+vendid[oa]|mas\s+vendid[oa]|top|ranking|mejor\s+vendid[oa])", original, re.I):
+    if re.search(r"(más\\s+vendid[oa]|mas\\s+vendid[oa]|top|ranking|mejor\\s+vendid[oa])", original, re.I):
         guia += (" Mostrar y agrupar por DESC_ARTICULO (no por DESC_TIPO), "
                  "ordenar por SUM(UNIDADES) DESC y usar LIMIT 1 si procede.")
     return pregunta.strip() + guia   
@@ -93,9 +117,9 @@ def es_centro_distribucion(nombre: str) -> bool:
     return any(x == t or x in t for x in CD_EXCLUSIONES)
     
 def forzar_distinct_pais_si_corresponde(pregunta, sql_generado):
-    if re.search(r'\bpa[ií]s\b', pregunta, re.I) and \
+    if re.search(r"\\bpa[ií]s\\b", pregunta, re.I) and \
        st.session_state.get("__last_ref_replacement__") in ("DESC_TIENDA", "DESC_TIENDA_LIST"):
-        if not re.search(r'\bselect\s+distinct\b', sql_generado, re.I):
+        if not re.search(r"\\bselect\\s+distinct\\b", sql_generado, re.I):
             return f"SELECT DISTINCT PAIS FROM ({sql_generado}) AS t"
     return sql_generado
     
@@ -189,17 +213,17 @@ def _to_yyyymmdd(v) -> str:
 _LOCAL_CURRENCY_BY_SOC = {"1000": "CLP", "2000": "PEN", "3000": "BOB"}
 _SOC_BY_NAME = {"chile": "1000", "perú": "2000", "peru": "2000", "bolivia": "3000"}
 def _solo_conteo_o_listado_de_paises(texto: str) -> bool:
-    patrones = r"(cu[aá]nt[oa]s?\s+pa[ií]ses|n[uú]mero\s+de\s+pa[ií]ses|cantidad\s+de\s+pa[ií]ses|" \
-               r"(listar|mostrar|muestr[ao])\s+(los\s+)?pa[ií]ses|qu[eé]\s+pa[ií]ses\b)"
+    patrones = r"(cu[aá]nt[oa]s?\\s+pa[ií]ses|n[uú]mero\\s+de\\s+pa[ií]ses|cantidad\\s+de\\s+pa[ií]ses|" \
+               r"(listar|mostrar|muestr[ao])\\s+(los\\s+)?pa[ií]ses|qu[eé]\\s+pa[ií]ses\\b)"
     return bool(re.search(patrones, texto, re.I))
 
 def _extraer_paises(texto: str) -> set[str]:
     """Set de SOCIEDAD_CO presentes explícitamente en el texto (por nombre o código)."""
     codes = set()
     for k, v in _SOC_BY_NAME.items():
-        if re.search(rf"\b{k}\b", texto, re.I):
+        if re.search(rf"\\b{k}\\b", texto, re.I):
             codes.add(v)
-    for m in re.findall(r"\b(1000|2000|3000)\b", texto):
+    for m in re.findall(r"\\b(1000|2000|3000)\\b", texto):
         codes.add(m)
     return codes
 
@@ -213,7 +237,7 @@ def _sugerir_monedas(paises: set[str], es_agrupado_por_pais: bool) -> list[str]:
 
 # --- Moneda: detectar en el texto (agrega PEN/BOB)
 def _tiene_moneda(texto: str) -> bool:
-    return bool(re.search(r"\b(usd|clp|pen|bob|d[oó]lar(?:es)?|pesos?)\b", texto, re.I))
+    return bool(re.search(r"\\b(usd|clp|pen|bob|d[oó]lar(?:es)?|pesos?)\\b", texto, re.I))
 
 # Ejecutar y mostrar IP saliente (útil para Remote MySQL en cPanel)
 ip_actual = obtener_ip_publica()
@@ -283,11 +307,11 @@ def connect_db():
         )
     except mysql.connector.Error as e:
         st.error(
-            "❌ No se pudo conectar a MySQL.\n\n"
+            "❌ No se pudo conectar a MySQL.\\n\\n"
             "Posibles causas: servidor caído, tu IP no está autorizada en cPanel → Remote MySQL, "
-            "o límite de conexiones.\n\n"
+            "o límite de conexiones.\\n\\n"
             f"Detalle técnico: {e}"
-            + (f"\n\nIP detectada: {ip_actual}" if ip_actual else "")
+            + (f"\\n\\nIP detectada: {ip_actual}" if ip_actual else "")
         )
         return None
 
@@ -302,7 +326,7 @@ def es_consulta_segura(sql):
 sql_prompt = PromptTemplate(
     input_variables=["pregunta"],
     template="""
-1. Si el usuario menciona términos como "tienda", "cliente", "marca", "canal", "producto", "temporada", "calidad", etc., asume que se refiere a su campo descriptivo (DESC_...) y **no al código (COD_...)**, excepto que el usuario especifique explícitamente “código de...”.
+1. Si el usuario menciona términos como "tienda", "cliente", "marca", "canal", "producto", "temporada", "calidad", etc., asume que se refiere a su campo descriptivo (DESC_...) y **no al código (COD_...)**, excepto que el usuario especifique explícitamente "código de...".
 
    - Ejemplo: "tienda" → DESC_TIENDA
    - Ejemplo: "marca" → DESC_MARCA
@@ -313,9 +337,9 @@ sql_prompt = PromptTemplate(
     Un articulo es solo cuando el DESC_TIPOARTICULO = "MODE". Si DESC_TIPOARTICULO = "DIEN" Entonces considerar como un servicio
     La columna SOCIEDAD_CO representa al pais 1000 = "Chile", 2000 = "Perú" y 3000 = "Bolivia" siempre que se mencione pais, usa esta regla.
     
-   Cuando el usuario mencione palabras que parecen referirse a nombres de marcas o productos (por ejemplo: "Levis", "Nike", "Adidas", etc.), **búscalas en DESC_MARCA**.
+   Cuando el usuario mencione palabras que parecen referirse a nombres de marcas o productos (por ejemplo: "Levis", "Nike", "Adidas", etc.), búscalas en DESC_MARCA.
 
-   Cuando el usuario mencione nombres de ciudades, centros comerciales u otros lugares (por ejemplo: "Costanera", "Talca", "Plaza Vespucio"), **búscalos en DESC_TIENDA**.
+   Cuando el usuario mencione nombres de ciudades, centros comerciales u otros lugares (por ejemplo: "Costanera", "Talca", "Plaza Vespucio"), búscalos en DESC_TIENDA.
 
    Cuando filtres por estos campos descriptivos (DESC_...), usa SIEMPRE la cláusula LIKE '%valor%' en lugar de =, para permitir coincidencias parciales o mayúsculas/minúsculas.
 
@@ -345,11 +369,11 @@ sql_prompt = PromptTemplate(
 
 8. Fecha de venta es FECHA_DOCUMENTO.
 
-9.- Si se menciona “para mujer”, “de mujer”, “femenino” o “de dama”, filtra con DESC_GENERO LIKE '%woman%'.
-- Si se menciona “para hombre”, “masculino”, “de varón” o “de caballero”, filtra con DESC_GENERO LIKE '%men%'.
-- Si se menciona “unisex”, usa DESC_GENERO LIKE '%unisex%'.
+9.- Si se menciona "para mujer", "de mujer", "femenino" o "de dama", filtra con DESC_GENERO LIKE '%woman%'.
+- Si se menciona "para hombre", "masculino", "de varón" o "de caballero", filtra con DESC_GENERO LIKE '%men%'.
+- Si se menciona "unisex", usa DESC_GENERO LIKE '%unisex%'.
 
-10. Siempre que se pregunte "¿de qué canal es esa tienda?", "¿qué canal pertenece?" o algo similar, usa `SELECT DISTINCT DESC_CANAL ...` para evitar resultados duplicados.
+10. Siempre que se pregunte "¿de qué canal es esa tienda?", "¿qué canal pertenece?" o algo similar, usa SELECT DISTINCT DESC_CANAL ... para evitar resultados duplicados.
 
 11. Si se pregunta por promociones, se refiere al campo D_PROMO como descripcion y el PROMO como codigo. Un articulo se vendio con promocion cuando estos campos no son null.
 
@@ -359,23 +383,23 @@ sql_prompt = PromptTemplate(
 
 14. EL DESC_ARTICULO = "DESPACHO A DOMICILIO" no se considera articulo si no un servicio. 
 
-15. COD_MODELO,	COD_COLOR.	TALLA y	LARGO son campos que no tienen descripcion solo mostrarlos asi
+15. COD_MODELO, COD_COLOR, TALLA y LARGO son campos que no tienen descripcion solo mostrarlos asi
 
 16. Cuando se hable de un articulo, usar DESC_ARTICULO para mostrarlo a menos que se pida solo el Codigo. ejemplo "Jeans mas vendido de mujer por modelo, talla, largo y color"  DESC_ARTICULO, COD_MODELO, etc.
 
-17. Cuando filtres por FECHA_DOCUMENTO, usa SIEMPRE formato 'YYYYMMDD' **sin guiones**. Ejemplo:
+17. Cuando filtres por FECHA_DOCUMENTO, usa SIEMPRE formato 'YYYYMMDD' sin guiones. Ejemplo:
     WHERE FECHA_DOCUMENTO BETWEEN '20250101' AND '20250131'
-    (La columna es numérica/texto sin guiones; NO uses '2025-01-01'.)
+    (La columna es numérica/texto sin guiones; NO uses '2025-01-01').
 
-18. Si la consulta es por país (ranking, “más vende”, “por país”, etc.):
+18. Si la consulta es por país (ranking, "más vende", "por país", etc.):
     - Agrupa por SOCIEDAD_CO y decodifica el nombre con:
       CASE SOCIEDAD_CO WHEN '1000' THEN 'Chile' WHEN '2000' THEN 'Perú' WHEN '3000' THEN 'Bolivia' END AS PAIS
-19. Cuando la pregunta use “se vende / vendido(s)” (ventas por unidades),
+19. Cuando la pregunta use "se vende / vendido(s)" (ventas por unidades),
     EXCLUYE devoluciones: agrega WHERE UNIDADES > 0.
-    20. Si la pregunta es comparación/ranking/agrupación “por país” o contiene frases como
-    “¿en qué país se vende…?”, no pidas un país específico; agrupa por SOCIEDAD_CO y
+    20. Si la pregunta es comparación/ranking/agrupación "por país" o contiene frases como
+    "¿en qué país se vende…?", no pidas un país específico; agrupa por SOCIEDAD_CO y
     mapea el nombre del país con el CASE.
-Cuando se reemplace un valor como “ese artículo”, “esa tienda”, etc., asegúrate de utilizar siempre `LIKE '%valor%'` en lugar de `=` para evitar errores por coincidencias exactas.
+Cuando se reemplace un valor como "ese artículo", "esa tienda", etc., asegúrate de utilizar siempre LIKE '%valor%' en lugar de = para evitar errores por coincidencias exactas.
 
 20. Si se habla de "Accesorios", "Bottoms", "Tops", "Customization", "Insumos" son Lineas de articulos y se considera el campo DESC_LINEA.
 
@@ -383,15 +407,15 @@ Cuando se reemplace un valor como “ese artículo”, “esa tienda”, etc., a
 
 22. Si la pregunta menciona un valor de DESC_TIPO (Back Patches, Buttons, Jackets, Jeans, Knits,
 Packing Bags, Pants, Patches, Pines, Shirts, Sin Tipo, Sweaters, Sweatshirts, Tabs, (Vacías)),
-úsalo SOLO como **filtro**: `DESC_TIPO LIKE '%<valor>%'` (case-insensitive) y **no** como columna a mostrar.
-- Si piden “más vendido / top / ranking / mejor vendido”, **muestra y agrupa por `DESC_ARTICULO`**
+úsalo SOLO como filtro: DESC_TIPO LIKE '%<valor>%' (case-insensitive) y no como columna a mostrar.
+- Si piden "más vendido / top / ranking / mejor vendido", muestra y agrupa por DESC_ARTICULO
   (y por atributos extra si los piden: COD_MODELO, TALLA, LARGO, COD_COLOR, etc.),
-  con `UNIDADES > 0`, `ORDER BY SUM(UNIDADES) DESC` y `LIMIT 1` si corresponde.
-- Si piden “montos” por ese tipo, usa `SUM(INGRESOS)` respetando MONEDA, pero los listados deben
-  seguir mostrando `DESC_ARTICULO` (no `DESC_TIPO`) salvo que explícitamente pidan “por tipo”.
-- Sólo cuando la intención sea un **resumen por tipo** (ej. “ventas por tipo”), agrupa por `DESC_TIPO`.
+  con UNIDADES > 0, ORDER BY SUM(UNIDADES) DESC y LIMIT 1 si corresponde.
+- Si piden "montos" por ese tipo, usa SUM(INGRESOS) respetando MONEDA, pero los listados deben
+  seguir mostrando DESC_ARTICULO (no DESC_TIPO) salvo que explícitamente pidan "por tipo".
+- Sólo cuando la intención sea un resumen por tipo (ej. "ventas por tipo"), agrupa por DESC_TIPO.
 
-23. Si un pronombre (ej. “ese pin”, “ese artículo”, “ese producto”) se resolvió a una
+23. Si un pronombre (ej. "ese pin", "ese artículo", "ese producto") se resolvió a una
     descripción concreta (de contexto) y corresponde a un ARTÍCULO, el filtro DEBE ser
     DESC_ARTICULO LIKE '%<valor>%' con UNIDADES > 0, y NO se debe usar DESC_TIPO.
 🔐 Recuerda usar WHERE, GROUP BY o ORDER BY cuando el usuario pregunte por filtros, agrupaciones o rankings.
@@ -399,7 +423,7 @@ Packing Bags, Pants, Patches, Pines, Shirts, Sin Tipo, Sweaters, Sweatshirts, Ta
 🖍️ Cuando generes la consulta SQL, no expliques la respuesta —solo entrega el SQL limpio y optimizado para MySQL.
 
 Pregunta: {pregunta}
-"""
+""",
 )
 
 referencias = {
@@ -453,7 +477,7 @@ def aplicar_contexto(pregunta: str) -> str:
         lista_sql = "', '".join(s.replace("'", "''") for s in lista)
         # Anotación guía para el generador SQL
         guia_in = f" (Filtrar con DESC_TIENDA IN ('{lista_sql}'))"
-        pregunta_mod = re.sub(r"(esas|estas)\s+tiendas", "las tiendas indicadas", pregunta_mod, flags=re.I)
+        pregunta_mod = re.sub(r"(esas|estas)\\s+tiendas", "las tiendas indicadas", pregunta_mod, flags=re.I)
         pregunta_mod += guia_in
         # marca que el reemplazo fue por tiendas (para saltarse aclaraciones)
         st.session_state["__last_ref_replacement__"] = "DESC_TIENDA_LIST"
@@ -530,10 +554,10 @@ def forzar_distinct_canal_si_corresponde(pregunta, sql_generado):
     Si la pregunta pide el pais de una tienda (ej: '¿de qué pais es esa tienda?'),
     envuelve el SQL en un SELECT DISTINCT para evitar filas duplicadas.
     """
-    if re.search(r'\bcanal(es)?\b', pregunta, flags=re.IGNORECASE) and \
-       re.search(r'\btienda\b|esa tienda', pregunta, flags=re.IGNORECASE):
+    if re.search(r"\\bcanal(es)?\\b", pregunta, flags=re.IGNORECASE) and \
+       re.search(r"\\btienda\\b|esa tienda", pregunta, flags=re.IGNORECASE):
         # Evitar doble DISTINCT si ya viene correcto
-        if not re.search(r'\bselect\s+distinct\b', sql_generado, flags=re.IGNORECASE):
+        if not re.search(r"\\bselect\\s+distinct\\b", sql_generado, flags=re.IGNORECASE):
             return f"SELECT DISTINCT DESC_CANAL FROM ({sql_generado}) AS t"
     return sql_generado
 
@@ -609,7 +633,7 @@ from typing import Optional, Tuple
 # Palabras que delatan montos:
 _MONEY_KEYS = (
     r"(venta|vende|ventas|ingreso|ingresos|margen|utilidad|gm|revenue|sales|facturaci[oó]n|"
-    r"precio|precios|car[oa]s?|barat[oa]s?|cost[eo]s?|ticket\s*promedio|valor(?:es)?)"
+    r"precio|precios|car[oa]s?|barat[oa]s?|cost[eo]s?|ticket\\s*promedio|valor(?:es)?)"
 )
     # Palabras que delatan pais:
 # --- País: detectores ----------------------------------------
@@ -621,18 +645,18 @@ def _habla_de_pais(texto: str) -> bool:
 
 def _tiene_pais(texto: str) -> bool:
     # ¿viene un país explícito (por nombre o código SOCIEDAD_CO)?
-    return bool(re.search(r"\b(1000|2000|3000|chile|per[uú]|bolivia)\b", texto, re.I))
+    return bool(re.search(r"\\b(1000|2000|3000|chile|per[uú]|bolivia)\\b", texto, re.I))
 
 def _agregacion_por_pais(texto: str) -> bool:
     # intenciones de ranking/agrupación/comparación por país
     patrones = (
-        r"(por\s+pa[ií]s|seg[uú]n\s+pa[ií]s|ranking\s+de\s+pa[ií]ses|"
-        r"top\s+\d+\s+pa[ií]ses|comparaci[oó]n\s+por\s+pa[ií]s|"
-        r"cu[aá]l(?:es)?\s+es\s+el\s+pa[ií]s\s+que\s+(?:m[aá]s|menos))"
+        r"(por\\s+pa[ií]s|seg[uú]n\\s+pa[ií]s|ranking\\s+de\\s+pa[ií]ses|"
+        r"top\\s+\\d+\\s+pa[ií]ses|comparaci[oó]n\\s+por\\s+pa[ií]s|"
+        r"cu[aá]l(?:es)?\\s+es\\s+el\\s+pa[ií]s\\s+que\\s+(?:m[aá]s|menos))"
     )
     return bool(re.search(patrones, texto, re.I))
 # Palabras que delatan fechas explícitas:
-_DATE_KEYS = r"(hoy|ayer|semana|mes|año|anio|últim|ultimo|desde|hasta|entre|rango|202\d|20\d\d|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)"
+_DATE_KEYS = r"(hoy|ayer|semana|mes|año|anio|últim|ultimo|desde|hasta|entre|rango|202\\d|20\\d\\d|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)"
 
 
 
@@ -641,7 +665,7 @@ _PAIS_MAP = {"chile": "1000", "peru": "2000", "perú": "2000", "bolivia": "3000"
 
 def _extraer_pais(texto: str):
     """Devuelve (codigo, etiqueta) si aparece un país en el texto, si no (None, None)."""
-    m = re.search(r"\b(chile|per[uú]|bolivia)\b", texto, re.I)
+    m = re.search(r"\\b(chile|per[uú]|bolivia)\\b", texto, re.I)
     if not m:
         return None, None
     p = m.group(1).lower()
@@ -656,18 +680,18 @@ def _tiene_fecha(texto: str) -> bool:
     return bool(re.search(_DATE_KEYS, texto, re.I))
 
 def _habla_de_tienda(texto: str) -> bool:
-    return bool(re.search(r"\btienda(s)?\b", texto, re.I))
+    return bool(re.search(r"\\btienda(s)?\\b", texto, re.I))
 
 
 def _menciona_cd(texto: str) -> bool:
     # si el usuario ya dijo explícitamente CD o ese nombre, no preguntamos
     return bool(
-        re.search(r"centro\s+de\s+distribuci[oó]n", texto, re.I)
-        or re.search(r"\bcentro\s+distribucion\b", texto, re.I)
-        or re.search(r"\bCD\b", texto, re.I)
+        re.search(r"centro\\s+de\\s+distribuci[oó]n", texto, re.I)
+        or re.search(r"\\bcentro\\s+distribucion\\b", texto, re.I)
+        or re.search(r"\\bCD\\b", texto, re.I)
     )
 # --- País: detectores (definir una sola vez) -----------------
-_COUNTRY_REGEX = r"\b(chile|per[uú]|bolivia|pa[ií]s(?:es)?)\b"
+_COUNTRY_REGEX = r"\\b(chile|per[uú]|bolivia|pa[ií]s(?:es)?)\\b"
 
 def _habla_de_pais(texto: str) -> bool:
     # ¿se menciona la noción de país en general?
@@ -675,22 +699,22 @@ def _habla_de_pais(texto: str) -> bool:
 
 def _tiene_pais(texto: str) -> bool:
     # ¿hay un país explícito por nombre o por código SOCIEDAD_CO?
-    return bool(re.search(r"\b(1000|2000|3000|chile|per[uú]|bolivia)\b", texto, re.I))
+    return bool(re.search(r"\\b(1000|2000|3000|chile|per[uú]|bolivia)\\b", texto, re.I))
 
 def _agregacion_por_pais(texto: str) -> bool:
     # intenciones de ranking/agrupación/comparación por país
     patrones = (
-        r"(por\s+pa[ií]s|seg[uú]n\s+pa[ií]s|ranking\s+de\s+pa[ií]ses|"
-        r"top\s+\d+\s+pa[ií]ses|comparaci[oó]n\s+por\s+pa[ií]s|"
-        r"cu[aá]l(?:es)?\s+es\s+el\s+pa[ií]s\s+que\s+(?:m[aá]s|menos)|"
-        r"en\s+qu[eé]\s+pa[ií]s\s+se\s+vend(?:e|i[óo]a)|"   # se vende / se vendió / se vendía
-        r"en\s+qu[eé]\s+pa[ií]s\s+se\s+vende\s+(?:m[aá]s|menos))"
+        r"(por\\s+pa[ií]s|seg[uú]n\\s+pa[ií]s|ranking\\s+de\\s+pa[ií]ses|"
+        r"top\\s+\\d+\\s+pa[ií]ses|comparaci[oó]n\\s+por\\s+pa[ií]s|"
+        r"cu[aá]l(?:es)?\\s+es\\s+el\\s+pa[ií]s\\s+que\\s+(?:m[aá]s|menos)|"
+        r"en\\s+qu[eé]\\s+pa[ií]s\\s+se\\s+vend(?:e|i[óo]a)|"   # se vende / se vendió / se vendía
+        r"en\\s+qu[eé]\\s+pa[ií]s\\s+se\\s+vende\\s+(?:m[aá]s|menos))"
     )
     return bool(re.search(patrones, texto, re.I))
 
 def _extraer_pais(texto: str):
     """Devuelve (codigo, etiqueta) si aparece un país en el texto; si no, (None, None)."""
-    m = re.search(r"\b(chile|per[uú]|bolivia)\b", texto, re.I)
+    m = re.search(r"\\b(chile|per[uú]|bolivia)\\b", texto, re.I)
     if not m:
         return None, None
     p = m.group(1).lower()
@@ -760,9 +784,9 @@ _SOC_BY_NAME = {"chile": "1000", "perú": "2000", "peru": "2000", "bolivia": "30
 def _extraer_paises(texto: str) -> set[str]:
     codes = set()
     for k, v in _SOC_BY_NAME.items():
-        if re.search(rf"\b{k}\b", texto, re.I):
+        if re.search(rf"\\b{k}\\b", texto, re.I):
             codes.add(v)
-    for m in re.findall(r"\b(1000|2000|3000)\b", texto):
+    for m in re.findall(r"\\b(1000|2000|3000)\\b", texto):
         codes.add(m)
     return codes
 
@@ -774,7 +798,7 @@ def _sugerir_monedas(paises: set[str], es_agrupado_por_pais: bool) -> list[str]:
 
 def _tiene_moneda(texto: str) -> bool:
     # Detecta USD/CLP/PEN/BOB
-    return bool(re.search(r"\b(usd|clp|pen|bob|d[oó]lar(?:es)?|pesos?)\b", texto, re.I))
+    return bool(re.search(r"\\b(usd|clp|pen|bob|d[oó]lar(?:es)?|pesos?)\\b", texto, re.I))
 
 
 def manejar_aclaracion(pregunta: str) -> Optional[str]:
@@ -923,11 +947,11 @@ if pregunta:
         st.info("🔁 Consulta reutilizada desde la cache.")
     else:
         # 2) Derivar género
-        if re.search(r'\b(mujer|femenin[oa])\b', pregunta, flags=re.IGNORECASE):
+        if re.search(r"\\b(mujer|femenin[oa])\\b", pregunta, flags=re.IGNORECASE):
             st.session_state["contexto"]["DESC_GENERO"] = "Woman"
-        elif re.search(r'\b(hombre|masculin[oa]|varón|varon|caballero)\b', pregunta, flags=re.IGNORECASE):
+        elif re.search(r"\\b(hombre|masculin[oa]|varón|varon|caballero)\\b", pregunta, flags=re.IGNORECASE):
             st.session_state["contexto"]["DESC_GENERO"] = "Men"
-        elif re.search(r'\bunisex\b', pregunta, flags=re.IGNORECASE):
+        elif re.search(r"\\bunisex\\b", pregunta, flags=re.IGNORECASE):
             st.session_state["contexto"]["DESC_GENERO"] = "Unisex"
 
         # 3) Aplicar contexto y guía de TIPO  ⬇⬇⬇ TODO este bloque re-indentar aquí
@@ -1035,17 +1059,47 @@ if sql_query:
 
 
 
+# ====== Construcción de CHIPS (píldoras) para el bloque SQL ======
+chips = []
+_pregunta_ctx = locals().get("pregunta_con_contexto", pregunta or "")
+# Moneda confirmada/sugerida
+mon_last = st.session_state.get("clarif_moneda_last")
+if isinstance(mon_last, list) and mon_last:
+    chips.append("Moneda: " + ", ".join(mon_last))
+elif isinstance(mon_last, str) and mon_last:
+    chips.append("Moneda: " + mon_last)
+# Rango YYYYMMDD si fue inyectado
+m = re.search(r"FECHA_DOCUMENTO entre (\\d{8}) y (\\d{8})", _pregunta_ctx, re.I)
+if m:
+    chips.append(f"Rango: {m.group(1)} → {m.group(2)}")
+# Inclusión/Exclusión de CD
+if "excluyendo el Centro de Distribución" in _pregunta_ctx:
+    chips.append("CDs excluidos")
+elif "incluyendo el Centro de Distribución" in _pregunta_ctx:
+    chips.append("CDs incluidos")
+# País (si quedó seteado por el aclarador)
+if "clarif_pais_label" in st.session_state:
+    chips.append("País: " + str(st.session_state["clarif_pais_label"]))
+# Lista de tiendas capturadas
+tiendas_list = st.session_state.get("contexto", {}).get("DESC_TIENDA_LIST")
+if isinstance(tiendas_list, list) and tiendas_list:
+    chips.append(f"Tiendas: {len(tiendas_list)} seleccionada(s)")
+
+
+
 # MOSTRAR TODAS LAS INTERACCIONES COMO CHAT
 # UI MEJORADA EN STREAMLIT
 # (Esta parte va justo al final del archivo app.py, reemplazando el bloque de visualización actual de interacciones)
 
 if pregunta and sql_query is not None:
     with st.chat_message("user"):
-        st.markdown(f"### 🤖 Pregunta actual:")
+        st.markdown("### 🤖 Pregunta actual:")
         st.markdown(f"> {pregunta}")
 
     with st.chat_message("assistant"):
         st.markdown("### 🔍 Consulta SQL Generada:")
+        if chips:
+            st.markdown(" ".join([f"<span class='pill'>{c}</span>" for c in chips]), unsafe_allow_html=True)
         st.code(sql_query, language="sql")
         st.markdown("### 💬 Respuesta:")
         st.markdown(resultado)
