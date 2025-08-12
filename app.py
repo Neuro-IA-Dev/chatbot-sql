@@ -259,12 +259,89 @@ def buscar_sql_en_cache(pregunta_nueva, umbral_similitud=0.90):
         st.warning(f"❌ Error buscando en cache: {e}")
     return None
 # ENTRADA DEL USUARIO
+# ENTRADA DEL USUARIO
+pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
 
+# Inicializar para evitar NameError si aún no hay pregunta
+sql_query = None
+resultado = ""
+guardar_en_cache_pending = None
+
+if pregunta:
+    with st.chat_message("user"):
+        st.markdown(pregunta)
+
+    # 1) Intentar reutilizar desde la cache semántica
+    sql_query = buscar_sql_en_cache(pregunta)
+
+    if sql_query:
+        st.info("🔁 Consulta reutilizada desde la cache.")
+    else:
+        # 2) Derivar género desde la pregunta (mejora de contexto)
+        if re.search(r'\b(mujer|femenin[oa])\b', pregunta, flags=re.IGNORECASE):
+            st.session_state["contexto"]["DESC_GENERO"] = "Woman"
+        elif re.search(r'\b(hombre|masculin[oa]|varón|varon|caballero)\b', pregunta, flags=re.IGNORECASE):
+            st.session_state["contexto"]["DESC_GENERO"] = "Men"
+        elif re.search(r'\bunisex\b', pregunta, flags=re.IGNORECASE):
+            st.session_state["contexto"]["DESC_GENERO"] = "Unisex"
+
+        # 3) Aplicar contexto y generar SQL con el LLM
+        pregunta_con_contexto = aplicar_contexto(pregunta)
+        prompt_text = sql_prompt.format(pregunta=pregunta_con_contexto)
+        sql_query = llm.predict(prompt_text).replace("```sql", "").replace("```", "").strip()
+
+        # 4) Forzar DISTINCT si corresponde
+        sql_query = forzar_distinct_canal_si_corresponde(pregunta_con_contexto, sql_query)
+
+        # 5) Preparar guardado en cache
+        embedding = obtener_embedding(pregunta)
+        guardar_en_cache_pending = embedding if embedding else None
+
+    # 6) Ejecutar SQL
+    try:
+        if not es_consulta_segura(sql_query):
+            st.error("❌ Consulta peligrosa bloqueada.")
+            resultado = "Consulta bloqueada"
+        else:
+            conn = connect_db()
+            cursor = conn.cursor()
+            cursor.execute(sql_query)
+
+            if sql_query.lower().startswith("select"):
+                rows = cursor.fetchall()
+                if cursor.description:
+                    columns = [col[0] for col in cursor.description]
+                    df = pd.DataFrame(rows, columns=columns)
+                    if "FECHA_DOCUMENTO" in df.columns:
+                        df["FECHA_DOCUMENTO"] = pd.to_datetime(
+                            df["FECHA_DOCUMENTO"].astype(str), format="%Y%m%d"
+                        ).dt.strftime("%d/%m/%Y")
+                    st.dataframe(df)
+                    resultado = f"{len(df)} filas"
+                    actualizar_contexto(df)
+                else:
+                    resultado = "La consulta no devolvió resultados."
+            else:
+                conn.commit()
+                resultado = "Consulta ejecutada."
+
+            cursor.close()
+            conn.close()
+    except Exception as e:
+        resultado = f"❌ Error ejecutando SQL: {e}"
+
+    # 7) Guardar conversación
+    st.session_state["conversacion"].append({
+        "pregunta": pregunta,
+        "respuesta": resultado,
+        "sql": sql_query,
+        "cache": guardar_en_cache_pending
+    })
 # MOSTRAR TODAS LAS INTERACCIONES COMO CHAT
 # UI MEJORADA EN STREAMLIT
 # (Esta parte va justo al final del archivo app.py, reemplazando el bloque de visualización actual de interacciones)
 
-if pregunta:
+if pregunta and sql_query is not None:
     with st.chat_message("user"):
         st.markdown(f"### 🤖 Pregunta actual:")
         st.markdown(f"> {pregunta}")
