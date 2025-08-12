@@ -345,6 +345,8 @@ Cuando se reemplace un valor como “ese artículo”, “esa tienda”, etc., a
 
 20. Si se habla de "Accesorios", "Bottoms", "Tops", "Customization", "Insumos" son Lineas de articulos y se considera el campo DESC_LINEA.
 
+21 Cuando se pregunta por el precio de venta se considera el distinct ingreso donde la cantidad = 1. 
+
 🔐 Recuerda usar WHERE, GROUP BY o ORDER BY cuando el usuario pregunte por filtros, agrupaciones o rankings.
 
 🖍️ Cuando generes la consulta SQL, no expliques la respuesta —solo entrega el SQL limpio y optimizado para MySQL.
