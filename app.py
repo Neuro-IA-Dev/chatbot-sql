@@ -430,7 +430,10 @@ def aplicar_contexto(pregunta):
             pregunta_modificada = re.sub(ref, valor_contexto, pregunta_modificada, flags=re.IGNORECASE)
     return pregunta_modificada
 
-campos_contexto = ["DESC_TIENDA", "DESC_CANAL", "DESC_MARCA", "DESC_ARTICULO", "DESC_GENERO", "NOMBRE_CLIENTE","SOCIEDAD_CO"]
+campos_contexto = [
+    "DESC_TIENDA","DESC_CANAL","DESC_MARCA","DESC_ARTICULO",
+    "DESC_GENERO","NOMBRE_CLIENTE","SOCIEDAD_CO","DESC_TIPO"
+]
 
 
 def actualizar_contexto(df):
@@ -595,9 +598,9 @@ def _habla_de_tienda(texto: str) -> bool:
 
 def _menciona_cd(texto: str) -> bool:
     # si el usuario ya dijo explícitamente CD o ese nombre, no preguntamos
-        return bool(
+    return bool(
         re.search(r"centro\s+de\s+distribuci[oó]n", texto, re.I)
-        or re.search(r"\bcentro\s+distribucion\b", texto, re.I)   # ⬅️ NUEVO
+        or re.search(r"\bcentro\s+distribucion\b", texto, re.I)
         or re.search(r"\bCD\b", texto, re.I)
     )
 # --- País: detectores (definir una sola vez) -----------------
@@ -858,29 +861,31 @@ if pregunta:
         elif re.search(r'\bunisex\b', pregunta, flags=re.IGNORECASE):
             st.session_state["contexto"]["DESC_GENERO"] = "Unisex"
 
-    # 3) Aplicar contexto y generar SQL con el LLM
-        pregunta_con_contexto = _anotar_tipo_en_pregunta(pregunta_con_contexto)
-    
-    # Si la pregunta es “meta países” (cuántos/lista/descripción),
-    # NO pidas moneda ni país específico; sugiere DOS SELECTs al LLM.
-    if _solo_conteo_o_listado_de_paises(pregunta_con_contexto):
-        pregunta_con_contexto += (
-            " Nota: Si la pregunta es 'cuántos países hay' o 'lista/descripcion de países', "
-            "no filtres por MONEDA y devuelve DOS SELECTs: "
-            "(1) SELECT COUNT(DISTINCT SOCIEDAD_CO) AS TOTAL_PAISES FROM VENTAS; "
-            "(2) SELECT DISTINCT CASE SOCIEDAD_CO WHEN '1000' THEN 'Chile' "
-            "WHEN '2000' THEN 'Perú' WHEN '3000' THEN 'Bolivia' END AS PAIS FROM VENTAS;"
-        )
+# 3) Aplicar contexto y generar SQL con el LLM
+pregunta_con_contexto = aplicar_contexto(pregunta)
+# Si detectamos un valor conocido de DESC_TIPO (Pines, Jackets, etc.), añadimos la guía
+pregunta_con_contexto = _anotar_tipo_en_pregunta(pregunta_con_contexto)
 
-    prompt_text = sql_prompt.format(pregunta=pregunta_con_contexto)
-    sql_query = llm.predict(prompt_text).replace("```sql", "").replace("```", "").strip()
+# Si la pregunta es “meta países” (cuántos/lista/descripción) NO pidas moneda/país y sugiere dos SELECTs
+if _solo_conteo_o_listado_de_paises(pregunta_con_contexto):
+    pregunta_con_contexto += (
+        " Nota: Si la pregunta es 'cuántos países hay' o 'lista/descripcion de países', "
+        "no filtres por MONEDA y devuelve DOS SELECTs: "
+        "(1) SELECT COUNT(DISTINCT SOCIEDAD_CO) AS TOTAL_PAISES FROM VENTAS; "
+        "(2) SELECT DISTINCT CASE SOCIEDAD_CO WHEN '1000' THEN 'Chile' "
+        "WHEN '2000' THEN 'Perú' WHEN '3000' THEN 'Bolivia' END AS PAIS FROM VENTAS;"
+    )
 
-    # 4) Forzar DISTINCT si corresponde
-    sql_query = forzar_distinct_canal_si_corresponde(pregunta_con_contexto, sql_query)
+prompt_text = sql_prompt.format(pregunta=pregunta_con_contexto)
+sql_query = llm.predict(prompt_text).replace("```sql", "").replace("```", "").strip()
 
-    # 5) Preparar guardado en cache
-    embedding = obtener_embedding(pregunta)
-    guardar_en_cache_pending = embedding if embedding else None
+# 4) Forzar DISTINCT si corresponde
+sql_query = forzar_distinct_canal_si_corresponde(pregunta_con_contexto, sql_query)
+
+# 5) Preparar guardado en cache
+embedding = obtener_embedding(pregunta)
+guardar_en_cache_pending = embedding if embedding else None
+
 
 
 # 6) Ejecutar SQL (soporta múltiples SELECT separados por ';') — SOLO si hay SQL
