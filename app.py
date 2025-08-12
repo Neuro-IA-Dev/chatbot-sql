@@ -727,27 +727,6 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
     # Si aún no confirma, detenemos el flujo principal y la app se re-renderiza
     st.stop()
 
-        rango = (d, h) if flags["fecha"] else None
-        excluir_cd = st.session_state.get("clarif_excluir_cd") if flags["tienda_vs_cd"] else None
-
-        # ← NUEVO: país
-        pais_code = st.session_state.get("clarif_pais_code") if flags["pais"] else None
-        pais_label = st.session_state.get("clarif_pais_label") if flags["pais"] else None
-
-        pregunta_enriquecida = _inyectar_aclaraciones_en_pregunta(pregunta, moneda, rango, excluir_cd)
-
-        # Si hay país, explícitalo para que el modelo aplique la regla de SOCIEDAD_CO
-        if pais_code and pais_label:
-            pregunta_enriquecida += f" para {pais_label} (SOCIEDAD_CO={pais_code})"
-
-        # Limpia estados
-        for k in ["clarif_moneda","clarif_fecha_desde","clarif_fecha_hasta","clarif_excluir_cd","clarif_pais_code","clarif_pais_label"]:
-            st.session_state.pop(k, None)
-
-        return pregunta_enriquecida
-
-    # Si aún no confirma, detenemos el flujo principal y la app se re-renderiza
-    st.stop()
 
 
 # ENTRADA DEL USUARIO
