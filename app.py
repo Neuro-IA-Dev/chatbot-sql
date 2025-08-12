@@ -20,12 +20,18 @@ import requests
 
 def obtener_ip_publica():
     try:
-        ip = requests.get("https://api.ipify.org").text
-        print(f"Tu IP pública es: {ip}")
-        return ip
-    except Exception as e:
-        print(f"Error al obtener la IP pública: {e}")
+        # Evita que se quede pegado si el servicio no responde
+        return requests.get("https://api.ipify.org", timeout=2).text
+    except Exception:
         return None
+
+# Ejecutar y mostrar IP saliente (útil para Remote MySQL en cPanel)
+ip_actual = obtener_ip_publica()
+if ip_actual:
+    st.caption(f"IP saliente detectada: {ip_actual} — agrégala en cPanel → Remote MySQL (Add Access Host).")
+else:
+    st.caption("No se pudo detectar la IP saliente (timeout/red).")
+
 
 # Ejecutar
 ip_actual = obtener_ip_publica()
@@ -48,16 +54,34 @@ if st.button("🔁 Reiniciar contexto", key="btn_reset_contexto"):
 
 st.markdown("Haz una pregunta y el sistema generará y ejecutará una consulta SQL automáticamente.")
 
-llm = ChatOpenAI(model_name="gpt-4o", temperature=0)
+llm = ChatOpenAI(
+    model_name="gpt-4o",
+    temperature=0,
+    openai_api_key=st.secrets["OPENAI_API_KEY"],
+    max_retries=1,
+    request_timeout=30,
+)
 
 def connect_db():
-    return mysql.connector.connect(
-        host="s1355.use1.mysecurecloudhost.com",
-        port=3306,
-        user="domolabs_RedTabBot_USER",
-        password="Pa$$w0rd_123",
-        database="domolabs_RedTabBot_DB"
-    )
+    try:
+        return mysql.connector.connect(
+            host="s1355.use1.mysecurecloudhost.com",
+            port=3306,
+            user="domolabs_RedTabBot_USER",
+            password="Pa$$w0rd_123",
+            database="domolabs_RedTabBot_DB",
+            connection_timeout=8,   # ← evita cuelgues largos
+        )
+    except mysql.connector.Error as e:
+        st.error(
+            "❌ No se pudo conectar a MySQL.\n\n"
+            "Posibles causas: servidor caído, tu IP no está autorizada en cPanel → Remote MySQL, "
+            "o límite de conexiones.\n\n"
+            f"Detalle técnico: {e}"
+            + (f"\n\nIP detectada: {ip_actual}" if ip_actual else "")
+        )
+        return None
+
 
 def es_consulta_segura(sql):
     sql = sql.lower()
@@ -244,6 +268,9 @@ def buscar_sql_en_cache(pregunta_nueva, umbral_similitud=0.90):
 
     try:
         conn = connect_db()
+        if conn is None:
+            return None  # Sin conexión → no hay cache
+
         cursor = conn.cursor(dictionary=True)
         cursor.execute("SELECT pregunta, embedding, sql_generado FROM semantic_cache")
         rows = cursor.fetchall()
@@ -259,7 +286,8 @@ def buscar_sql_en_cache(pregunta_nueva, umbral_similitud=0.90):
     except Exception as e:
         st.warning(f"❌ Error buscando en cache: {e}")
     return None
-# ENTRADA DEL USUARIO
+
+
 # ENTRADA DEL USUARIO
 pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
 
@@ -298,13 +326,19 @@ if pregunta:
         embedding = obtener_embedding(pregunta)
         guardar_en_cache_pending = embedding if embedding else None
 
-    # 6) Ejecutar SQL
-    try:
-        if not es_consulta_segura(sql_query):
-            st.error("❌ Consulta peligrosa bloqueada.")
-            resultado = "Consulta bloqueada"
+   # 6) Ejecutar SQL
+try:
+    if not es_consulta_segura(sql_query):
+        st.error("❌ Consulta peligrosa bloqueada.")
+        resultado = "Consulta bloqueada"
+    else:
+        conn = connect_db()
+        if conn is None:
+            # Mostramos igual el SQL para depurar prompt aunque no haya DB
+            st.info("🔌 Sin conexión a MySQL: se muestra solo la consulta generada.")
+            st.code(sql_query, language="sql")
+            resultado = "Sin conexión a MySQL"
         else:
-            conn = connect_db()
             cursor = conn.cursor()
             cursor.execute(sql_query)
 
@@ -315,7 +349,7 @@ if pregunta:
                     df = pd.DataFrame(rows, columns=columns)
                     if "FECHA_DOCUMENTO" in df.columns:
                         df["FECHA_DOCUMENTO"] = pd.to_datetime(
-                            df["FECHA_DOCUMENTO"].astype(str), format="%Y%m%d"
+                            df["FECHA_DOCUMENTO"].astype(str), format="%Y%m%d", errors="coerce"
                         ).dt.strftime("%d/%m/%Y")
                     st.dataframe(df)
                     resultado = f"{len(df)} filas"
@@ -328,8 +362,9 @@ if pregunta:
 
             cursor.close()
             conn.close()
-    except Exception as e:
-        resultado = f"❌ Error ejecutando SQL: {e}"
+except Exception as e:
+    resultado = f"❌ Error ejecutando SQL: {e}"
+
 
     # 7) Guardar conversación
     st.session_state["conversacion"].append({
