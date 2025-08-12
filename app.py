@@ -48,13 +48,17 @@ def _detectar_tipo_en_texto(texto: str) -> str | None:
     return None
 
 def _anotar_tipo_en_pregunta(pregunta: str) -> str:
-    """Si la pregunta menciona un valor conocido de DESC_TIPO, agrega una nota guía."""
     t = _detectar_tipo_en_texto(pregunta)
     if not t:
         return pregunta
-    return (pregunta.strip() +
-            f" (Interpretar '{t}' como filtro DESC_TIPO LIKE '%{t}%' y, si se habla de vender,"
-            " contar sólo UNIDADES > 0).")
+
+    guia = (f" (Filtrar con DESC_TIPO LIKE '%{t}%'. Considerar UNIDADES > 0 al hablar de ventas.)")
+    # Si la intención es "más vendido/top/ranking", forzar que muestre DESC_ARTICULO
+    if re.search(r"(más\s+vendid[oa]|mas\s+vendid[oa]|top|ranking|mejor\s+vendid[oa])", pregunta, re.I):
+        guia += (" Mostrar y agrupar por DESC_ARTICULO (no por DESC_TIPO), "
+                 "ordenar por SUM(UNIDADES) DESC y usar LIMIT 1 si procede.")
+    return (pregunta.strip() + guia)
+
 
 def obtener_ip_publica():
     try:
@@ -374,13 +378,16 @@ Cuando se reemplace un valor como “ese artículo”, “esa tienda”, etc., a
 
 21 Cuando se pregunta por el precio de venta se considera el distinct ingreso donde la cantidad = 1. 
 
-22. XX. Si la pregunta menciona un valor de DESC_TIPO (Back Patches, Buttons, Jackets, Jeans, Knits,
+22. Si la pregunta menciona un valor de DESC_TIPO (Back Patches, Buttons, Jackets, Jeans, Knits,
 Packing Bags, Pants, Patches, Pines, Shirts, Sin Tipo, Sweaters, Sweatshirts, Tabs, (Vacías)),
-TRÁTALO COMO UN ARTÍCULO: filtra con DESC_TIPO LIKE '%<valor>%' y NO con DESC_ARTICULO.
-- “¿cuántos <tipo> se venden …?” ⇒ SUM(UNIDADES) con UNIDADES > 0.
-- Si piden montos por <tipo>, usa SUM(INGRESOS) (y respeta MONEDA).
-- Para listados o rankings por tipo, usa GROUP BY DESC_TIPO.
-- Usa siempre LIKE '%valor%' y case-insensitive.
+úsalo SOLO como **filtro**: `DESC_TIPO LIKE '%<valor>%'` (case-insensitive) y **no** como columna a mostrar.
+- Si piden “más vendido / top / ranking / mejor vendido”, **muestra y agrupa por `DESC_ARTICULO`**
+  (y por atributos extra si los piden: COD_MODELO, TALLA, LARGO, COD_COLOR, etc.),
+  con `UNIDADES > 0`, `ORDER BY SUM(UNIDADES) DESC` y `LIMIT 1` si corresponde.
+- Si piden “montos” por ese tipo, usa `SUM(INGRESOS)` respetando MONEDA, pero los listados deben
+  seguir mostrando `DESC_ARTICULO` (no `DESC_TIPO`) salvo que explícitamente pidan “por tipo”.
+- Sólo cuando la intención sea un **resumen por tipo** (ej. “ventas por tipo”), agrupa por `DESC_TIPO`.
+
 
 🔐 Recuerda usar WHERE, GROUP BY o ORDER BY cuando el usuario pregunte por filtros, agrupaciones o rankings.
 
