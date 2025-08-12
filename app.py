@@ -27,12 +27,6 @@ def make_excel_download_bytes(df: pd.DataFrame, sheet_name="Datos"):
         df.to_excel(writer, index=False, sheet_name=sheet_name)
     bio.seek(0)
     return bio.getvalue()
-def _agregacion_por_pais(texto: str) -> bool:
-    # Intenciones típicas de ranking/comparación/agrupación por país
-    patrones = r"(por\s+pa[ií]s|seg[uú]n\s+pa[ií]s|ranking\s+de\s+pa[ií]ses|" \
-               r"cu[aá]l(?:es)?\s+es\s+el\s+pa[ií]s\s+que\s+(?:m[aá]s|menos)|" \
-               r"top\s+\d+\s+pa[ií]ses|comparaci[oó]n\s+por\s+pa[ií]s)"
-    return bool(re.search(patrones, texto, re.I))
 def obtener_ip_publica():
     try:
         # Evita que se quede pegado si el servicio no responde
@@ -371,11 +365,11 @@ _MONEY_KEYS = (
 )
     # Palabras que delatan pais:
 # --- País: detectores ----------------------------------------
-_COUNTRY_WORDS = r"\b(chile|per[uú]|bolivia|pa[ií]s(?:es)?)\b"
+ 
 
 def _habla_de_pais(texto: str) -> bool:
     # ¿se menciona la noción de país en general?
-    return bool(re.search(_COUNTRY_WORDS, texto, re.I))
+    return bool(re.search(_COUNTRY_REGEX, texto, re.I))
 
 def _tiene_pais(texto: str) -> bool:
     # ¿viene un país explícito (por nombre o código SOCIEDAD_CO)?
@@ -395,12 +389,7 @@ _DATE_KEYS = r"(hoy|ayer|semana|mes|año|anio|últim|ultimo|desde|hasta|entre|ra
 def _tiene_moneda(texto: str) -> bool:
     # detecta si el usuario ya dijo CLP/CH$ o USD/dólar
     return bool(re.search(r"\b(clp|ch\$|pesos?)\b", texto, re.I) or re.search(r"\b(usd|d[oó]lares?)\b", texto, re.I))
-def _tiene_pais(texto: str) -> bool:
-    # ¿El usuario ya especificó un país explícito?
-    return bool(re.search(r"\b(chile|per[uú]|bolivia)\b", texto, re.I))
 
-def _habla_de_pais(texto: str) -> bool:
-    return bool(re.search(_COUNTRY_KEYS, texto, re.I))
 
 # Mapa utilitario para SOCIEDAD_CO
 _PAIS_MAP = {"chile": "1000", "peru": "2000", "perú": "2000", "bolivia": "3000"}
@@ -423,12 +412,41 @@ def _tiene_fecha(texto: str) -> bool:
 
 def _habla_de_tienda(texto: str) -> bool:
     return bool(re.search(r"\btienda(s)?\b", texto, re.I))
-def _habla_de_pais(texto: str) -> bool:
-    return bool(re.search(_COUNTRY_KEYS, texto, re.I))
+
 
 def _menciona_cd(texto: str) -> bool:
     # si el usuario ya dijo explícitamente CD o ese nombre, no preguntamos
     return bool(re.search(r"centro\s+de\s+distribuci[oó]n", texto, re.I) or re.search(r"\bCD\b", texto, re.I))
+# --- País: detectores (definir una sola vez) -----------------
+_COUNTRY_REGEX = r"\b(chile|per[uú]|bolivia|pa[ií]s(?:es)?)\b"
+
+def _habla_de_pais(texto: str) -> bool:
+    # ¿se menciona la noción de país en general?
+    return bool(re.search(_COUNTRY_REGEX, texto, re.I))
+
+def _tiene_pais(texto: str) -> bool:
+    # ¿hay un país explícito por nombre o por código SOCIEDAD_CO?
+    return bool(re.search(r"\b(1000|2000|3000|chile|per[uú]|bolivia)\b", texto, re.I))
+
+def _agregacion_por_pais(texto: str) -> bool:
+    # intenciones de ranking/agrupación/comparación por país
+    patrones = (
+        r"(por\s+pa[ií]s|seg[uú]n\s+pa[ií]s|ranking\s+de\s+pa[ií]ses|"
+        r"top\s+\d+\s+pa[ií]ses|comparaci[oó]n\s+por\s+pa[ií]s|"
+        r"cu[aá]l(?:es)?\s+es\s+el\s+pa[ií]s\s+que\s+(?:m[aá]s|menos))"
+    )
+    return bool(re.search(patrones, texto, re.I))
+
+def _extraer_pais(texto: str):
+    """Devuelve (codigo, etiqueta) si aparece un país en el texto; si no, (None, None)."""
+    m = re.search(r"\b(chile|per[uú]|bolivia)\b", texto, re.I)
+    if not m:
+        return None, None
+    p = m.group(1).lower()
+    if p.startswith("chil"): return "1000", "Chile"
+    if p.startswith("per"):  return "2000", "Perú"
+    if p.startswith("bol"):  return "3000", "Bolivia"
+    return None, None
 
 def _necesita_aclaracion(texto: str) -> dict:
     habla_pais  = _habla_de_pais(texto)
