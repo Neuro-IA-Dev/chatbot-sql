@@ -441,14 +441,26 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
         st.subheader("Rango de fechas")
         hoy = _dt.date.today()
         desde_def = hoy - _dt.timedelta(days=30)
-        d, h = st.date_input(
-            "Selecciona el rango",
-            value=(desde_def, hoy),
-            key="k_rango_fechas"
-        )
-        # Guarda en session_state para leerlos al confirmar
-        st.session_state["clarif_fecha_desde"] = d
-        st.session_state["clarif_fecha_hasta"] = h
+       val = st.date_input(
+    "Selecciona el rango",
+    value=(desde_def, hoy),
+    key="k_rango_fechas"
+)
+
+# Puede ser date o (date, date)
+if isinstance(val, tuple) and len(val) == 2:
+    d, h = val
+else:
+    d, h = val, None  # usuario escogió solo la fecha inicial
+
+st.session_state["clarif_fecha_desde"] = d
+st.session_state["clarif_fecha_hasta"] = h
+
+# Si aún no hay fecha final, detenemos el flujo con un aviso
+if h is None:
+    st.caption("Elige también la fecha de término para continuar.")
+    st.stop()
+
 
     # Tienda vs CD
     if flags["tienda_vs_cd"]:
@@ -461,17 +473,22 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
 
 
     if st.button("✅ Continuar con estas opciones", type="primary", key="btn_continuar_opciones"):
-        moneda = st.session_state.get("clarif_moneda") if flags["moneda"] else None
-        rango = (st.session_state.get("clarif_fecha_desde"), st.session_state.get("clarif_fecha_hasta")) if flags["fecha"] else None
-        excluir_cd = st.session_state.get("clarif_excluir_cd") if flags["tienda_vs_cd"] else None
+    moneda = st.session_state.get("clarif_moneda") if flags["moneda"] else None
+    d = st.session_state.get("clarif_fecha_desde") if flags["fecha"] else None
+    h = st.session_state.get("clarif_fecha_hasta") if flags["fecha"] else None
 
-        pregunta_enriquecida = _inyectar_aclaraciones_en_pregunta(pregunta, moneda, rango, excluir_cd)
+    if flags["fecha"] and (d is None or h is None):
+        st.warning("Falta completar el rango de fechas.")
+        st.stop()
 
-        # Limpia estados de clarificación
-        for k in ["clarif_moneda","clarif_fecha_desde","clarif_fecha_hasta","clarif_excluir_cd"]:
-            st.session_state.pop(k, None)
+    rango = (d, h) if flags["fecha"] else None
+    excluir_cd = st.session_state.get("clarif_excluir_cd") if flags["tienda_vs_cd"] else None
 
-        return pregunta_enriquecida
+    pregunta_enriquecida = _inyectar_aclaraciones_en_pregunta(pregunta, moneda, rango, excluir_cd)
+    for k in ["clarif_moneda","clarif_fecha_desde","clarif_fecha_hasta","clarif_excluir_cd"]:
+        st.session_state.pop(k, None)
+    return pregunta_enriquecida
+
 
     # Si aún no confirmó, detén el flujo principal
     st.stop()
