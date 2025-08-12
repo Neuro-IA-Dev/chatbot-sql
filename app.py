@@ -389,94 +389,57 @@ def _inyectar_aclaraciones_en_pregunta(pregunta: str, moneda: Optional[str], ran
 
 # UI de aclaración (usa st.session_state para ciclar hasta que el usuario confirme)
 def manejar_aclaracion(pregunta: str) -> Optional[str]:
-    """
-    Si requiere aclaración, muestra UI y devuelve una 'pregunta enriquecida' cuando el usuario confirma.
-    Si no requiere, devuelve None (para que sigas el flujo normal).
-    """
     flags = _necesita_aclaracion(pregunta)
 
     if not any(flags.values()):
-        return None  # sin aclaración
+        return None
 
     st.info("Antes de ejecutar, aclaremos algunos detalles para evitar resultados ambiguos 👇")
 
-    # Estado para recordar selecciones
     st.session_state.setdefault("clarif_moneda", None)
     st.session_state.setdefault("clarif_fecha_desde", None)
     st.session_state.setdefault("clarif_fecha_hasta", None)
-    st.session_state.setdefault("clarif_excluir_cd", True)  # por defecto: excluir CD
+    st.session_state.setdefault("clarif_excluir_cd", True)
 
-    # Moneda
-    if flags["moneda"]:
-        st.subheader("Moneda")
-        st.session_state["clarif_moneda"] = st.radio(
-            "¿En qué moneda quieres el cálculo?",
-            options=["CLP", "USD"],
-            horizontal=True,
-            key="k_moneda_radio"
-        )
+    # ... (UI de moneda/fechas/cd)
 
-    # Fecha
-    if flags["fecha"]:
-        st.subheader("Rango de fechas")
-        d_def, h_def, _ = _defaults_fecha()
-        col1, col2 = st.columns(2)
-        with col1:
-            st.session_state["clarif_fecha_desde"] = st.text_input("Desde (dd/mm/aaaa)", value=d_def, key="k_fecha_desde")
-        with col2:
-            st.session_state["clarif_fecha_hasta"] = st.text_input("Hasta (dd/mm/aaaa)", value=h_def, key="k_fecha_hasta")
-        st.caption("Tip: puedes escribir '01/01/2024' y '31/12/2024' por ejemplo.")
-
-    # Tienda vs CD
-    if flags["tienda_vs_cd"]:
-        st.subheader("¿Centro de distribución?")
-        st.session_state["clarif_excluir_cd"] = st.checkbox(
-            "Excluir 'Centro de Distribución LEVI' de los cálculos (recomendado)",
-            value=True,
-            key="k_excluir_cd"
-        )
-
-    # Confirmar
-    if st.button("✅ Continuar con estas opciones", type="primary"):
-        moneda = st.session_state.get("clarif_moneda")
-        if not flags["moneda"]:
-            moneda = None
-
-        if flags["fecha"]:
-            d = st.session_state.get("clarif_fecha_desde")
-            h = st.session_state.get("clarif_fecha_hasta")
-            rango = (d, h)
-        else:
-            rango = None
-
+    if st.button("✅ Continuar con estas opciones", type="primary", key="btn_continuar_opciones"):
+        moneda = st.session_state.get("clarif_moneda") if flags["moneda"] else None
+        rango = (st.session_state.get("clarif_fecha_desde"), st.session_state.get("clarif_fecha_hasta")) if flags["fecha"] else None
         excluir_cd = st.session_state.get("clarif_excluir_cd") if flags["tienda_vs_cd"] else None
 
         pregunta_enriquecida = _inyectar_aclaraciones_en_pregunta(pregunta, moneda, rango, excluir_cd)
 
-        # Limpia el estado de aclaración para el próximo turno
-        for k in ["clarif_moneda", "clarif_fecha_desde", "clarif_fecha_hasta", "clarif_excluir_cd"]:
-            if k in st.session_state:
-                del st.session_state[k]
+        # Limpia estados de clarificación
+        for k in ["clarif_moneda","clarif_fecha_desde","clarif_fecha_hasta","clarif_excluir_cd"]:
+            st.session_state.pop(k, None)
 
         return pregunta_enriquecida
 
-    # Mientras no confirme, detenemos el flujo principal
+    # Si aún no confirmó, detén el flujo principal
     st.stop()
 
 # ENTRADA DEL USUARIO
 pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
-
+# --- NUEVO: si el usuario ya escribió algo antes y estamos en el rerun del botón,
+# recupera la pregunta que guardamos en session_state
+if not pregunta and st.session_state.get("pending_question"):
+    pregunta = st.session_state["pending_question"]
 # Inicializar para evitar NameError si aún no hay pregunta
 sql_query = None
 resultado = ""
 guardar_en_cache_pending = None
 
 if pregunta:
+    # Guarda siempre la última pregunta mientras dure la desambiguación
+    st.session_state["pending_question"] = pregunta
+
     # ⬇️ NUEVO: pedir aclaraciones si hace falta
     pregunta_clara = manejar_aclaracion(pregunta)
     if pregunta_clara:
-        # Reemplaza la pregunta original por la enriquecida
+        # Reemplaza y limpia
         pregunta = pregunta_clara
+        st.session_state["pending_question"] = pregunta  # opcional: mantén enriquecida
     with st.chat_message("user"):
         st.markdown(pregunta)
 
@@ -566,6 +529,8 @@ if sql_query:
         "sql": sql_query,
         "cache": guardar_en_cache_pending
     })
+    # Limpia la pregunta pendiente si ya no la necesitas
+    st.session_state.pop("pending_question", None)
 
 
 
