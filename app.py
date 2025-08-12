@@ -16,10 +16,110 @@ _COUNTRY_REGEX = r"\b(chile|per[uú]|bolivia|pa[ií]s(?:es)?)\b"
 
 # CONFIG STREAMLIT
 st.set_page_config(page_title="Asistente Inteligente de Ventas Retail", page_icon="🧠")
+# ==== UI: estilos globales ====
+st.markdown("""
+<style>
+/* Fuente un poco más limpia */
+html, body, [class*="css"] { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+
+/* Contenedor más angosto y centrado */
+.block-container { max-width: 1100px; padding-top: 1rem; }
+
+/* Título con gradiente y emoji alineado */
+h1 span.app-title {
+  background: linear-gradient(90deg,#a78bfa,#60a5fa);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+
+/* Tarjetas */
+.card {
+  background: #111418; border: 1px solid #222833; border-radius: 16px;
+  padding: 18px 18px; box-shadow: 0 8px 24px rgba(0,0,0,.25);
+}
+.card h3 { margin-top: 0; }
+
+/* Cinta pequeña (chips/pills) */
+.pill { display:inline-block; padding: 4px 10px; border-radius: 999px;
+  border:1px solid #2b3340; background:#0e1116; color:#aab3c5; font-size:12px; margin-right:6px; }
+.pill b{ color:#e2e8f0; }
+
+/* Bloque de código bonito */
+pre code, .stCodeBlock { font-size: 13px; line-height: 1.45; }
+.stCode { border-radius: 14px !important; border: 1px solid #1f2530; }
+
+/* Botonera de feedback */
+.fb-row { display:flex; gap:8px; }
+.fb-ok, .fb-bad {
+  border-radius: 10px; padding: 8px 12px; border:1px solid transparent; cursor:pointer;
+}
+.fb-ok { background:#0b5; color:white; }
+.fb-bad { background:#d33; color:white; }
+
+/* Tablas más compactas */
+.dataframe tbody tr:hover { background: rgba(96,165,250,.08); }
+</style>
+""", unsafe_allow_html=True)
+
+# Encabezado compacto
+st.markdown(f"<h1>🧠 <span class='app-title'>Asistente Inteligente de Ventas</span></h1>", unsafe_allow_html=True)
+#st.caption("IP saliente detectada: " + (obtener_ip_publica() or "—") + " — agrégala en cPanel → Remote MySQL (Add Access Host).")
+
 st.image("assets/logo_neurovia.png", width=180)
 st.title(":brain: Asistente Inteligente de Intanis Ventas Retail")
 import requests
 import io
+with st.container():
+    c1, c2, c3 = st.columns([1,1,3])
+    with c1:
+        st.button("🧹 Borrar historial", key="btn_borrar_historial_top")
+        if st.session_state.get("btn_borrar_historial_top"):
+            st.session_state["historial"] = []
+            st.session_state["conversacion"] = []
+            st.success("Historial borrado.")
+    with c2:
+        st.button("🔁 Reiniciar contexto", key="btn_reset_contexto_top")
+        if st.session_state.get("btn_reset_contexto_top"):
+            st.session_state["contexto"] = {}
+            st.info("Contexto reiniciado.")
+    with c3:
+        st.markdown(
+            "<div class='pill'>Moneda sugerida: <b>{}</b></div>"
+            "<div class='pill'>Rango por defecto: <b>últimos 30 días</b></div>".format(
+                ", ".join(st.session_state.get("clarif_moneda_last", [])) if isinstance(st.session_state.get("clarif_moneda_last"), list) else (st.session_state.get("clarif_moneda_last") or "USD")
+            ),
+            unsafe_allow_html=True
+        )
+def ui_sql_card(sql: str, *, title="Consulta SQL Generada", chips: list[str] = None):
+    st.markdown("<div class='card'>", unsafe_allow_html=True)
+    st.markdown(f"### 📜 {title}")
+    if chips:
+        st.markdown(" ".join([f"<span class='pill'>{c}</span>" for c in chips]), unsafe_allow_html=True)
+        st.write("")  # separador
+    st.code(sql, language="sql")
+    st.markdown("</div>", unsafe_allow_html=True)
+def ui_result_block(df: pd.DataFrame, idx: int, *, file_label="Resultado"):
+    st.markdown("<div class='card'>", unsafe_allow_html=True)
+    st.markdown(f"### 📊 {file_label} {idx}")
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+    c1, c2 = st.columns([1,1])
+    with c1:
+        xlsx_bytes = make_excel_download_bytes(df, sheet_name=f"{file_label}_{idx}")
+        st.download_button(
+            "⬇️ Descargar Excel",
+            data=xlsx_bytes,
+            file_name=f"{file_label.lower()}_{idx}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key=f"dl_{file_label}_{idx}",
+        )
+    with c2:
+        ok = st.button("👍 Correcto", key=f"ok_{file_label}_{idx}")
+        bad = st.button("👎 No fue correcto", key=f"bad_{file_label}_{idx}")
+        if ok:
+            st.success("¡Gracias! Guardado como correcto.")
+        if bad:
+            st.warning("Gracias por el feedback.")
+    st.markdown("</div>", unsafe_allow_html=True)
 
 def make_excel_download_bytes(df: pd.DataFrame, sheet_name="Datos"):
     """Devuelve bytes de un .xlsx con el dataframe."""
@@ -965,9 +1065,35 @@ if pregunta:
         embedding = obtener_embedding(pregunta)
         guardar_en_cache_pending = embedding if embedding else None
 
+# ==== Chips/pills de contexto para mostrar junto al SQL ====
+chips = []
+
+# Moneda
+mon_last = st.session_state.get("clarif_moneda_last")
+if isinstance(mon_last, list):
+    chips.append(f"Moneda: {', '.join(mon_last)}")
+elif mon_last:
+    chips.append(f"Moneda: {mon_last}")
+
+# Rango de fechas (si viene “YYYYMMDD … YYYYMMDD” en la pregunta enriquecida)
+m = re.search(r"FECHA_DOCUMENTO entre (\d{8}) y (\d{8})", pregunta_con_contexto, re.I)
+if m:
+    chips.append(f"Rango: {m.group(1)} → {m.group(2)}")
+
+# Exclusión de CD
+if "excluyendo el Centro de Distribución" in pregunta_con_contexto:
+    chips.append("CDs excluidos")
+elif "incluyendo el Centro de Distribución" in pregunta_con_contexto:
+    chips.append("CDs incluidos")
+
+# Pistas de país si quedaron seteadas
+if "clarif_pais_label" in st.session_state:
+    chips.append(f"País: {st.session_state['clarif_pais_label']}")
 
 
-
+tiendas_list = st.session_state.get("contexto", {}).get("DESC_TIENDA_LIST")
+if isinstance(tiendas_list, list) and tiendas_list:
+    chips.append(f"Tiendas: {len(tiendas_list)} seleccionada(s)")
 # 6) Ejecutar SQL (soporta múltiples SELECT separados por ';') — SOLO si hay SQL
 if pregunta and isinstance(sql_query, str) and sql_query.strip():
     try:
@@ -1045,8 +1171,7 @@ if pregunta and sql_query is not None:
         st.markdown(f"> {pregunta}")
 
     with st.chat_message("assistant"):
-        st.markdown("### 🔍 Consulta SQL Generada:")
-        st.code(sql_query, language="sql")
+        ui_sql_card(sql_query, chips=chips)
         st.markdown("### 💬 Respuesta:")
         st.markdown(resultado)
 
