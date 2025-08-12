@@ -39,7 +39,52 @@ def _fmt_money(v: float) -> str:
     if pd.isna(v):
         return ""
     s = f"{float(v):,.2f}"
+    # 7.765.093,83
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
+
+def aplicar_formato_monetario(df: pd.DataFrame) -> pd.DataFrame:
+    """Formatea columnas monetarias: 7.765.093,83 y agrega sufijo de moneda.
+       Detecta columnas por nombre 'dinero-like' y por tipo numérico.
+    """
+    if df is None or df.empty:
+        return df
+
+    df2 = df.copy()
+
+    # 1) Candidatas por tipo numérico
+    numeric_cols = [c for c in df2.columns if pd.api.types.is_numeric_dtype(df2[c])]
+
+    # 2) Heurística por nombre: incluye términos de dinero y excluye unidades/cantidades
+    include_pat = re.compile(r"(ingres|venta|cost|margen|gm|precio|importe|neto|bruto|total|valor|ticket)", re.I)
+    exclude_pat = re.compile(r"(unid|cantidad|count|nro|numero)", re.I)
+
+    money_cols = [c for c in numeric_cols if include_pat.search(c) and not exclude_pat.search(c)]
+    if not money_cols:
+        return df2
+
+    # 3) Sufijo de moneda: si existe MONEDA por fila, úsala; si no, usa la última elegida (si es única)
+    last = st.session_state.get("clarif_moneda_last")
+    single_suffix = None
+    if isinstance(last, list) and len(last) == 1:
+        single_suffix = last[0]
+    elif isinstance(last, str):
+        single_suffix = last
+
+    if "MONEDA" in df2.columns:
+        for c in money_cols:
+            df2[c] = df2.apply(
+                lambda r: f"{_fmt_money(r[c])} {r['MONEDA']}" if pd.notnull(r[c]) else r[c],
+                axis=1,
+            )
+    else:
+        for c in money_cols:
+            if single_suffix:
+                df2[c] = df2[c].map(lambda x: f"{_fmt_money(x)} {single_suffix}" if pd.notnull(x) else x)
+            else:
+                df2[c] = df2[c].map(lambda x: _fmt_money(x) if pd.notnull(x) else x)
+
+    return df2
+
 
 def aplicar_formato_monetario(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
@@ -95,6 +140,10 @@ def _to_yyyymmdd(v) -> str:
 # --- País <-> moneda -------------------------------------------
 _LOCAL_CURRENCY_BY_SOC = {"1000": "CLP", "2000": "PEN", "3000": "BOB"}
 _SOC_BY_NAME = {"chile": "1000", "perú": "2000", "peru": "2000", "bolivia": "3000"}
+def _solo_conteo_o_listado_de_paises(texto: str) -> bool:
+    patrones = r"(cu[aá]nt[oa]s?\s+pa[ií]ses|n[uú]mero\s+de\s+pa[ií]ses|cantidad\s+de\s+pa[ií]ses|" \
+               r"(listar|mostrar|muestr[ao])\s+(los\s+)?pa[ií]ses|qu[eé]\s+pa[ií]ses\b)"
+    return bool(re.search(patrones, texto, re.I))
 
 def _extraer_paises(texto: str) -> set[str]:
     """Set de SOCIEDAD_CO presentes explícitamente en el texto (por nombre o código)."""
@@ -513,15 +562,16 @@ def _necesita_aclaracion(texto: str) -> dict:
     habla_pais  = _habla_de_pais(texto)
     tiene_pais  = _tiene_pais(texto)
     agrega_pais = _agregacion_por_pais(texto)
+    conteo_o_listado = _solo_conteo_o_listado_de_paises(texto)
 
     return {
         "moneda": (_pide_montos(texto) and not _tiene_moneda(texto)),
-        # Solo preguntamos "País" si se habla de país, NO hay uno explícito
-        # y NO es una intención de ranking/agrupación por país.
-        "pais":   (habla_pais and not tiene_pais and not agrega_pais),
+        # NO pedir país si es conteo/listado de países
+        "pais":   (habla_pais and not tiene_pais and not agrega_pais and not conteo_o_listado),
         "fecha":  (not _tiene_fecha(texto)),
         "tienda_vs_cd": (_habla_de_tienda(texto) and not _menciona_cd(texto)),
     }
+
 
 def _defaults_fecha() -> Tuple[str, str, str]:
     """Rango por defecto: últimos 30 días, en formato dd/mm/yyyy + yyyyMMdd."""
