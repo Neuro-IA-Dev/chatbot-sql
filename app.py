@@ -48,17 +48,11 @@ def _detectar_tipo_en_texto(texto: str) -> str | None:
     return None
 
 def _anotar_tipo_en_pregunta(pregunta: str) -> str:
-    """
-    Recibe el texto ya con contexto aplicado, pero detecta tipos SOLO
-    en la pregunta original del usuario para evitar falsos positivos
-    como 'JEANS' dentro de un DESC_ARTICULO.
-    Además, si el último reemplazo fue por ARTÍCULO, no guiamos por TIPO.
-    """
-    # 1) si el último reemplazo de pronombre fue por ARTÍCULO → no forzar TIPO
+    # Si el último reemplazo fue por ARTÍCULO → no forzar TIPO
     if st.session_state.get("__last_ref_replacement__") == "DESC_ARTICULO":
         return pregunta
 
-    # 2) usa la pregunta original para detectar si el usuario mencionó un TIPO explícito
+    # Detecta TIPO solo en la pregunta ORIGINAL del usuario
     original = st.session_state.get("__last_user_question__", pregunta)
     t = _detectar_tipo_en_texto(original)
     if not t:
@@ -68,7 +62,7 @@ def _anotar_tipo_en_pregunta(pregunta: str) -> str:
     if re.search(r"(más\s+vendid[oa]|mas\s+vendid[oa]|top|ranking|mejor\s+vendid[oa])", original, re.I):
         guia += (" Mostrar y agrupar por DESC_ARTICULO (no por DESC_TIPO), "
                  "ordenar por SUM(UNIDADES) DESC y usar LIMIT 1 si procede.")
-    return pregunta.strip() + guia    
+    return pregunta.strip() + guia   
 
 
 def obtener_ip_publica():
@@ -442,8 +436,7 @@ referencias.update({
     "ese tipo": "DESC_TIPO",
     "ese categoria de tipo": "DESC_TIPO",
 })
-# antes de aplicar contexto
-st.session_state["__last_user_question__"] = pregunta  # ← pregunt original, sin reemplazos
+
 def aplicar_contexto(pregunta: str) -> str:
     pregunta_mod = pregunta
     lower_q = pregunta.lower()
@@ -456,8 +449,8 @@ def aplicar_contexto(pregunta: str) -> str:
                     val_original = st.session_state["contexto"][campo]
                     val_escapado = re.escape(val_original)
                     pregunta_mod = re.sub(ref, val_escapado, pregunta_mod, flags=re.IGNORECASE)
-                    st.session_state["__last_ref_replacement__"] = campo   # ← guarda qué campo se usó
-                    st.session_state["__last_ref_value__"] = val_original  # ← valor por si lo necesitas
+                    st.session_state["__last_ref_replacement__"] = campo
+                    st.session_state["__last_ref_value__"] = val_original
                     break
     return pregunta_mod
 
@@ -876,11 +869,9 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
 
 # ENTRADA DEL USUARIO
 pregunta = st.chat_input("🧠 Pregunta en lenguaje natural")
-# --- NUEVO: si el usuario ya escribió algo antes y estamos en el rerun del botón,
-# recupera la pregunta que guardamos en session_state
 if not pregunta and st.session_state.get("pending_question"):
     pregunta = st.session_state["pending_question"]
-# Inicializar para evitar NameError si aún no hay pregunta
+
 sql_query = None
 resultado = ""
 guardar_en_cache_pending = None
@@ -889,7 +880,11 @@ if pregunta:
     # Guarda siempre la última pregunta mientras dure la desambiguación
     st.session_state["pending_question"] = pregunta
 
-    # ⬇️ NUEVO: pedir aclaraciones si hace falta
+    # 👇 Guarda el texto ORIGINAL del usuario (antes de cualquier sustitución)
+    st.session_state["__last_user_question__"] = pregunta
+    st.session_state["__last_ref_replacement__"] = None  # reset de tracking opcional
+
+    # ⬇️ Desambiguación (moneda/fechas/etc.)
     pregunta_clara = manejar_aclaracion(pregunta)
     if pregunta_clara:
         # Reemplaza y limpia
@@ -899,13 +894,12 @@ if pregunta:
     with st.chat_message("user"):
         st.markdown(pregunta)
 
-    # 1) Intentar reutilizar desde la cache semántica
+    # 1) Cache semántica
     sql_query = buscar_sql_en_cache(pregunta)
-
     if sql_query:
         st.info("🔁 Consulta reutilizada desde la cache.")
     else:
-        # 2) Derivar género desde la pregunta (mejora de contexto)
+        # 2) Derivar género
         if re.search(r'\b(mujer|femenin[oa])\b', pregunta, flags=re.IGNORECASE):
             st.session_state["contexto"]["DESC_GENERO"] = "Woman"
         elif re.search(r'\b(hombre|masculin[oa]|varón|varon|caballero)\b', pregunta, flags=re.IGNORECASE):
@@ -913,9 +907,8 @@ if pregunta:
         elif re.search(r'\bunisex\b', pregunta, flags=re.IGNORECASE):
             st.session_state["contexto"]["DESC_GENERO"] = "Unisex"
 
-        # 3) Aplicar contexto y generar SQL con el LLM
+        # 3) Aplicar contexto y guía de TIPO
         pregunta_con_contexto = aplicar_contexto(pregunta)
-        # Si detectamos un valor conocido de DESC_TIPO (Pines, Jackets, etc.), añadimos la guía
         pregunta_con_contexto = _anotar_tipo_en_pregunta(pregunta_con_contexto)
 
         # Si la pregunta es “meta países” (cuántos/lista/descripción) NO pidas moneda/país y sugiere dos SELECTs
