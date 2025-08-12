@@ -29,6 +29,33 @@ def make_excel_download_bytes(df: pd.DataFrame, sheet_name="Datos"):
         df.to_excel(writer, index=False, sheet_name=sheet_name)
     bio.seek(0)
     return bio.getvalue()
+# ---- Valores de DESC_TIPO que queremos reconocer en texto ----
+_TIPOS_VALIDOS = [
+    "Back Patches","Buttons","Jackets","Jeans","Knits","Packing Bags","Pants",
+    "Patches","Pines","Shirts","Sin Tipo","Sweaters","Sweatshirts","Tabs","(Vacías)"
+]
+# mapa en minúsculas para matching case-insensitive
+_TIPOS_SET = {t.lower(): t for t in _TIPOS_VALIDOS}
+
+def _detectar_tipo_en_texto(texto: str) -> str | None:
+    # compara en lower y permite coincidencias parciales de palabras
+    tx = texto.lower()
+    for k, original in _TIPOS_SET.items():
+        # coincidencia por palabra o subcadena completa segura
+        # (Back Patches y Packing Bags tienen espacio; usamos 'in' con cuidado)
+        if re.search(rf"\b{re.escape(k)}\b", tx) or k in tx:
+            return original
+    return None
+
+def _anotar_tipo_en_pregunta(pregunta: str) -> str:
+    """Si la pregunta menciona un valor conocido de DESC_TIPO, agrega una nota guía."""
+    t = _detectar_tipo_en_texto(pregunta)
+    if not t:
+        return pregunta
+    return (pregunta.strip() +
+            f" (Interpretar '{t}' como filtro DESC_TIPO LIKE '%{t}%' y, si se habla de vender,"
+            " contar sólo UNIDADES > 0).")
+
 def obtener_ip_publica():
     try:
         # Evita que se quede pegado si el servicio no responde
@@ -347,6 +374,14 @@ Cuando se reemplace un valor como “ese artículo”, “esa tienda”, etc., a
 
 21 Cuando se pregunta por el precio de venta se considera el distinct ingreso donde la cantidad = 1. 
 
+22. XX. Si la pregunta menciona un valor de DESC_TIPO (Back Patches, Buttons, Jackets, Jeans, Knits,
+Packing Bags, Pants, Patches, Pines, Shirts, Sin Tipo, Sweaters, Sweatshirts, Tabs, (Vacías)),
+TRÁTALO COMO UN ARTÍCULO: filtra con DESC_TIPO LIKE '%<valor>%' y NO con DESC_ARTICULO.
+- “¿cuántos <tipo> se venden …?” ⇒ SUM(UNIDADES) con UNIDADES > 0.
+- Si piden montos por <tipo>, usa SUM(INGRESOS) (y respeta MONEDA).
+- Para listados o rankings por tipo, usa GROUP BY DESC_TIPO.
+- Usa siempre LIKE '%valor%' y case-insensitive.
+
 🔐 Recuerda usar WHERE, GROUP BY o ORDER BY cuando el usuario pregunte por filtros, agrupaciones o rankings.
 
 🖍️ Cuando generes la consulta SQL, no expliques la respuesta —solo entrega el SQL limpio y optimizado para MySQL.
@@ -380,6 +415,10 @@ referencias = {
     "ese customization":"DESC_ARTICULO",
     "ese insumo":"DESC_ARTICULO"
 }
+referencias.update({
+    "ese tipo": "DESC_TIPO",
+    "ese categoria de tipo": "DESC_TIPO",
+})
 
 def aplicar_contexto(pregunta):
     pregunta_modificada = pregunta
@@ -402,6 +441,7 @@ def actualizar_contexto(df):
         "DESC_MARCA": ["DESC_MARCA", "MARCA", "Marca"],
         "DESC_ARTICULO": ["DESC_ARTICULO", "ARTICULO", "Artículo", "Articulo"],
         "DESC_GENERO": ["DESC_GENERO", "GENERO", "Género", "Genero"],
+        "DESC_TIPO": ["DESC_TIPO", "TIPO", "Tipo"],
         "NOMBRE_CLIENTE": ["NOMBRE_CLIENTE", "CLIENTE", "Cliente"],
         "SOCIEDAD_CO": ["PAIS", "PAISES", "Pais","Paises","Países","País"]
     }
@@ -819,8 +859,8 @@ if pregunta:
             st.session_state["contexto"]["DESC_GENERO"] = "Unisex"
 
     # 3) Aplicar contexto y generar SQL con el LLM
-    pregunta_con_contexto = aplicar_contexto(pregunta)
-
+    pregunta_con_contexto = _anotar_tipo_en_pregunta(pregunta_con_contexto)
+    
     # Si la pregunta es “meta países” (cuántos/lista/descripción),
     # NO pidas moneda ni país específico; sugiere DOS SELECTs al LLM.
     if _solo_conteo_o_listado_de_paises(pregunta_con_contexto):
