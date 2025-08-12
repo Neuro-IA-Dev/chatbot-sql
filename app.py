@@ -358,58 +358,57 @@ if pregunta:
         embedding = obtener_embedding(pregunta)
         guardar_en_cache_pending = embedding if embedding else None
 
-# 6) Ejecutar SQL (soporta múltiples SELECT separados por ';')
-try:
-    if not es_consulta_segura(sql_query):
-        st.error("❌ Consulta peligrosa bloqueada.")
-        resultado = "Consulta bloqueada"
-    else:
-        conn = connect_db()
-        if conn is None:
-            st.info("🔌 Sin conexión a MySQL: se muestra solo la consulta generada.")
-            st.code(sql_query, language="sql")
-            resultado = "Sin conexión a MySQL"
+# 6) Ejecutar SQL (soporta múltiples SELECT separados por ';') — SOLO si hay SQL
+if pregunta and isinstance(sql_query, str) and sql_query.strip():
+    try:
+        if not es_consulta_segura(sql_query):
+            st.error("❌ Consulta peligrosa bloqueada.")
+            resultado = "Consulta bloqueada"
         else:
-            queries = split_queries(sql_query)
-            dfs_mostrados = 0
-
-            for idx, q in enumerate(queries, start=1):
-                if not es_consulta_segura(q):
-                    st.warning(f"⚠️ Subconsulta {idx} bloqueada por seguridad.")
-                    continue
-
-                df_sub = ejecutar_select(conn, q)
-                if df_sub is not None:
-                    dfs_mostrados += 1
-                    st.subheader(f"Resultado {idx}")
-                    st.dataframe(df_sub, use_container_width=True)
-
-                    # Botón de descarga a Excel por resultado
-                    try:
-                        xlsx_bytes = make_excel_download_bytes(df_sub, sheet_name=f"Resultado_{idx}")
-                        st.download_button(
-                            label="⬇️ Descargar en Excel",
-                            data=xlsx_bytes,
-                            file_name=f"resultado_{idx}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            key=f"dl_{idx}",
-                        )
-                    except Exception as e:
-                        st.warning(f"No se pudo generar la descarga del Resultado {idx}: {e}")
-
-                    # Actualiza contexto con el primer DF útil
-                    if dfs_mostrados == 1:
-                        actualizar_contexto(df_sub)
-
-            conn.close()
-
-            if dfs_mostrados == 0:
-                resultado = "Consulta ejecutada sin resultados tabulares."
+            conn = connect_db()
+            if conn is None:
+                st.info("🔌 Sin conexión a MySQL: se muestra solo la consulta generada.")
+                st.code(sql_query, language="sql")
+                resultado = "Sin conexión a MySQL"
             else:
-                resultado = f"Se mostraron {dfs_mostrados} resultado(s)."
+                queries = split_queries(sql_query)
+                dfs_mostrados = 0
 
-except Exception as e:
-    resultado = f"❌ Error ejecutando SQL: {e}"
+                for idx, q in enumerate(queries, start=1):
+                    if not es_consulta_segura(q):
+                        st.warning(f"⚠️ Subconsulta {idx} bloqueada por seguridad.")
+                        continue
+
+                    df_sub = ejecutar_select(conn, q)
+                    if df_sub is not None:
+                        dfs_mostrados += 1
+                        st.subheader(f"Resultado {idx}")
+                        st.dataframe(df_sub, use_container_width=True)
+                        try:
+                            xlsx_bytes = make_excel_download_bytes(df_sub, sheet_name=f"Resultado_{idx}")
+                            st.download_button(
+                                label="⬇️ Descargar en Excel",
+                                data=xlsx_bytes,
+                                file_name=f"resultado_{idx}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                key=f"dl_{idx}",
+                            )
+                        except Exception as e:
+                            st.warning(f"No se pudo generar la descarga del Resultado {idx}: {e}")
+
+                        if dfs_mostrados == 1:
+                            actualizar_contexto(df_sub)
+
+                conn.close()
+                resultado = ("Consulta ejecutada sin resultados tabulares."
+                             if dfs_mostrados == 0 else
+                             f"Se mostraron {dfs_mostrados} resultado(s).")
+    except Exception as e:
+        resultado = f"❌ Error ejecutando SQL: {e}"
+else:
+    # Al cargar sin pregunta, no muestres nada
+    resultado = ""
+
 
 # ✅ 7) Guardar conversación SOLO si hay datos válidos
 if sql_query:
