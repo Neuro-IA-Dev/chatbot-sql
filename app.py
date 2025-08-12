@@ -269,7 +269,7 @@ if pregunta:
     guardar_en_cache_pending = None
 
 if sql_query:
-    st.info("🔁 Consulta reutilizada desde la cache.")
+   st.info("🔁 Consulta reutilizada desde la cache.")
 else:
     # Derivar género desde la pregunta si aparece explícito (mejora de contexto)
     if re.search(r'\b(mujer|femenin[oa])\b', pregunta, flags=re.IGNORECASE):
