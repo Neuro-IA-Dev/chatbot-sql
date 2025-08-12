@@ -48,19 +48,27 @@ def _detectar_tipo_en_texto(texto: str) -> str | None:
     return None
 
 def _anotar_tipo_en_pregunta(pregunta: str) -> str:
-    # Si el usuario dice "ese ..." y tenemos ARTÍCULO en contexto, no guiar por TIPO
-    if re.search(r"\bese\b", pregunta, re.I) and "DESC_ARTICULO" in st.session_state.get("contexto", {}):
+    """
+    Recibe el texto ya con contexto aplicado, pero detecta tipos SOLO
+    en la pregunta original del usuario para evitar falsos positivos
+    como 'JEANS' dentro de un DESC_ARTICULO.
+    Además, si el último reemplazo fue por ARTÍCULO, no guiamos por TIPO.
+    """
+    # 1) si el último reemplazo de pronombre fue por ARTÍCULO → no forzar TIPO
+    if st.session_state.get("__last_ref_replacement__") == "DESC_ARTICULO":
         return pregunta
 
-    t = _detectar_tipo_en_texto(pregunta)
+    # 2) usa la pregunta original para detectar si el usuario mencionó un TIPO explícito
+    original = st.session_state.get("__last_user_question__", pregunta)
+    t = _detectar_tipo_en_texto(original)
     if not t:
         return pregunta
 
     guia = (f" (Filtrar con DESC_TIPO LIKE '%{t}%'. Considerar UNIDADES > 0 al hablar de ventas.)")
-    if re.search(r"(más\s+vendid[oa]|mas\s+vendid[oa]|top|ranking|mejor\s+vendid[oa])", pregunta, re.I):
+    if re.search(r"(más\s+vendid[oa]|mas\s+vendid[oa]|top|ranking|mejor\s+vendid[oa])", original, re.I):
         guia += (" Mostrar y agrupar por DESC_ARTICULO (no por DESC_TIPO), "
                  "ordenar por SUM(UNIDADES) DESC y usar LIMIT 1 si procede.")
-    return pregunta.strip() + guia
+    return pregunta.strip() + guia    
 
 
 def obtener_ip_publica():
@@ -434,17 +442,22 @@ referencias.update({
     "ese tipo": "DESC_TIPO",
     "ese categoria de tipo": "DESC_TIPO",
 })
-
+# antes de aplicar contexto
+st.session_state["__last_user_question__"] = pregunta  # ← pregunt original, sin reemplazos
 def aplicar_contexto(pregunta: str) -> str:
     pregunta_mod = pregunta
     lower_q = pregunta.lower()
+    st.session_state["__last_ref_replacement__"] = None  # reset
+
     for ref, campos in referencias.items():
         if ref in lower_q:
-            # toma el primer campo disponible en contexto (prioridad)
-            for campo in campos:
+            for campo in campos if isinstance(campos, list) else [campos]:
                 if campo in st.session_state.get("contexto", {}):
-                    val = re.escape(st.session_state["contexto"][campo])
-                    pregunta_mod = re.sub(ref, val, pregunta_mod, flags=re.IGNORECASE)
+                    val_original = st.session_state["contexto"][campo]
+                    val_escapado = re.escape(val_original)
+                    pregunta_mod = re.sub(ref, val_escapado, pregunta_mod, flags=re.IGNORECASE)
+                    st.session_state["__last_ref_replacement__"] = campo   # ← guarda qué campo se usó
+                    st.session_state["__last_ref_value__"] = val_original  # ← valor por si lo necesitas
                     break
     return pregunta_mod
 
