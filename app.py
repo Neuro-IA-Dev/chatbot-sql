@@ -42,6 +42,29 @@ if ip_actual:
 else:
     st.caption("No se pudo detectar la IP saliente (timeout/red).")
 
+def split_queries(sql_text: str) -> list[str]:
+    """Divide el SQL por ';' y limpia vacíos. Suficiente para la mayoría de casos."""
+    return [q.strip() for q in sql_text.strip().split(";") if q.strip()]
+
+def ejecutar_select(conn, query: str) -> pd.DataFrame | None:
+    """Ejecuta un SELECT y devuelve DataFrame; para no-SELECT devuelve None."""
+    cur = conn.cursor()
+    cur.execute(query)
+    if query.lower().lstrip().startswith("select"):
+        rows = cur.fetchall()
+        cols = [c[0] for c in cur.description] if cur.description else []
+        df = pd.DataFrame(rows, columns=cols)
+        # Formato de fecha si aplica
+        if "FECHA_DOCUMENTO" in df.columns:
+            df["FECHA_DOCUMENTO"] = pd.to_datetime(
+                df["FECHA_DOCUMENTO"].astype(str), format="%Y%m%d", errors="coerce"
+            ).dt.strftime("%d/%m/%Y")
+        cur.close()
+        return df
+    else:
+        conn.commit()
+    cur.close()
+    return None
 
 # Ejecutar
 ip_actual = obtener_ip_publica()
@@ -336,59 +359,65 @@ if pregunta:
         embedding = obtener_embedding(pregunta)
         guardar_en_cache_pending = embedding if embedding else None
 
-       # 6) Ejecutar SQL
-    try:
-        if not es_consulta_segura(sql_query):
-            st.error("❌ Consulta peligrosa bloqueada.")
-            resultado = "Consulta bloqueada"
+# 6) Ejecutar SQL (soporta múltiples SELECT separados por ';')
+try:
+    if not es_consulta_segura(sql_query):
+        st.error("❌ Consulta peligrosa bloqueada.")
+        resultado = "Consulta bloqueada"
+    else:
+        conn = connect_db()
+        if conn is None:
+            st.info("🔌 Sin conexión a MySQL: se muestra solo la consulta generada.")
+            st.code(sql_query, language="sql")
+            resultado = "Sin conexión a MySQL"
         else:
-            conn = connect_db()
-            if conn is None:
-                # Mostramos igual el SQL para depurar prompt aunque no haya DB
-                st.info("🔌 Sin conexión a MySQL: se muestra solo la consulta generada.")
-                st.code(sql_query, language="sql")
-                resultado = "Sin conexión a MySQL"
+            queries = split_queries(sql_query)
+            dfs_mostrados = 0
+
+            for idx, q in enumerate(queries, start=1):
+                if not es_consulta_segura(q):
+                    st.warning(f"⚠️ Subconsulta {idx} bloqueada por seguridad.")
+                    continue
+
+                df_sub = ejecutar_select(conn, q)
+                if df_sub is not None:
+                    dfs_mostrados += 1
+                    st.subheader(f"Resultado {idx}")
+                    st.dataframe(df_sub, use_container_width=True)
+
+                    # Botón de descarga (Excel o CSV, según tu helper)
+                    try:
+                        # si usas la versión con autodetección:
+                        # data, fname, mime = make_table_download(df_sub, base_name=f"resultado_{idx}")
+                        # st.download_button("⬇️ Descargar", data=data, file_name=fname, mime=mime, key=f"dl_{idx}")
+
+                        # si usas make_excel_download_bytes:
+                        xlsx_bytes = make_excel_download_bytes(df_sub, sheet_name=f"Resultado_{idx}")
+                        st.download_button(
+                            label="⬇️ Descargar en Excel",
+                            data=xlsx_bytes,
+                            file_name=f"resultado_{idx}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key=f"dl_{idx}",
+                        )
+                    except Exception as e:
+                        st.warning(f"No se pudo generar la descarga del Resultado {idx}: {e}")
+
+                    # Actualiza contexto con el primer DF útil
+                    if dfs_mostrados == 1:
+                        actualizar_contexto(df_sub)
+
+            conn.close()
+
+            if dfs_mostrados == 0:
+                resultado = "Consulta ejecutada sin resultados tabulares."
             else:
-                cursor = conn.cursor()
-                cursor.execute(sql_query)
+                # suma de filas de todos los resultados mostrados (opcional)
+                total_filas = sum(len(df_sub) for df_sub in [] if df_sub is not None)
+                resultado = f"Se mostraron {dfs_mostrados} resultado(s)."
+except Exception as e:
+    resultado = f"❌ Error ejecutando SQL: {e}"
 
-                if sql_query.lower().startswith("select"):
-                    rows = cursor.fetchall()
-                    if cursor.description:
-                        columns = [col[0] for col in cursor.description]
-                        df = pd.DataFrame(rows, columns=columns)
-                        if "FECHA_DOCUMENTO" in df.columns:
-                            df["FECHA_DOCUMENTO"] = pd.to_datetime(
-                                df["FECHA_DOCUMENTO"].astype(str), format="%Y%m%d", errors="coerce"
-                            ).dt.strftime("%d/%m/%Y")
-
-                        st.dataframe(df)
-
-                        # ↓↓↓ Descargar Excel (bien indentado)
-                        try:
-                            xlsx_bytes = make_excel_download_bytes(df, sheet_name="Resultado")
-                            st.download_button(
-                                label="⬇️ Descargar en Excel",
-                                data=xlsx_bytes,
-                                file_name="resultado_consulta.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                key="dl_actual"
-                            )
-                        except Exception as e:
-                            st.warning(f"No se pudo generar el Excel: {e}")
-
-                        resultado = f"{len(df)} filas"
-                        actualizar_contexto(df)
-                    else:
-                        resultado = "La consulta no devolvió resultados."
-                else:
-                    conn.commit()
-                    resultado = "Consulta ejecutada."
-
-                cursor.close()
-                conn.close()
-    except Exception as e:
-        resultado = f"❌ Error ejecutando SQL: {e}"
 
     # 7) Guardar conversación
     st.session_state["conversacion"].append({
