@@ -349,7 +349,7 @@ from typing import Optional, Tuple
 
 # Palabras que delatan montos:
 _MONEY_KEYS = (
-    r"(venta|ventas|ingreso|ingresos|margen|utilidad|gm|revenue|sales|facturaci[oó]n|"
+    r"(venta|vende|ventas|ingreso|ingresos|margen|utilidad|gm|revenue|sales|facturaci[oó]n|"
     r"precio|precios|car[oa]s?|barat[oa]s?|cost[eo]s?|ticket\s*promedio|valor(?:es)?)"
 )
 # Palabras que delatan fechas explícitas:
