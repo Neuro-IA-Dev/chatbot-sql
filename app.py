@@ -477,7 +477,7 @@ if pregunta:
     if pregunta_clara:
         # Reemplaza la pregunta original por la enriquecida
         pregunta = pregunta_clara
-        with st.chat_message("user"):
+    with st.chat_message("user"):
         st.markdown(pregunta)
 
     # 1) Intentar reutilizar desde la cache semántica
