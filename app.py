@@ -17,6 +17,16 @@ st.set_page_config(page_title="Asistente Inteligente de Ventas Retail", page_ico
 st.image("assets/logo_neurovia.png", width=180)
 st.title(":brain: Asistente Inteligente de Intanis Ventas Retail")
 import requests
+import io
+
+def make_excel_download_bytes(df: pd.DataFrame, sheet_name="Datos"):
+    """Devuelve bytes de un .xlsx con el dataframe."""
+    bio = io.BytesIO()
+    # Usa xlsxwriter si está disponible; pandas cae a openpyxl si no.
+    with pd.ExcelWriter(bio, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False, sheet_name=sheet_name)
+    bio.seek(0)
+    return bio.getvalue()
 
 def obtener_ip_publica():
     try:
@@ -352,6 +362,17 @@ try:
                             df["FECHA_DOCUMENTO"].astype(str), format="%Y%m%d", errors="coerce"
                         ).dt.strftime("%d/%m/%Y")
                     st.dataframe(df)
+                    try:
+    xlsx_bytes = make_excel_download_bytes(df, sheet_name="Resultado")
+    st.download_button(
+        label="⬇️ Descargar en Excel",
+        data=xlsx_bytes,
+        file_name="resultado_consulta.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="dl_actual"
+    )
+except Exception as e:
+    st.warning(f"No se pudo generar el Excel: {e}")
                     resultado = f"{len(df)} filas"
                     actualizar_contexto(df)
                 else:
@@ -424,6 +445,19 @@ if st.session_state["conversacion"]:
                         if "FECHA_DOCUMENTO" in df_hist.columns:
                             df_hist["FECHA_DOCUMENTO"] = pd.to_datetime(df_hist["FECHA_DOCUMENTO"].astype(str), errors="coerce", format="%Y%m%d").dt.strftime("%d/%m/%Y")
                         st.dataframe(df_hist, hide_index=True)
+                        # ↓↓↓ NUEVO: descarga Excel para cada ítem del historial
+try:
+    xlsx_hist = make_excel_download_bytes(df_hist, sheet_name="Historial")
+    st.download_button(
+        label="⬇️ Descargar en Excel",
+        data=xlsx_hist,
+        file_name=f"resultado_hist_{i}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key=f"dl_hist_{i}"
+    )
+except Exception as e:
+    st.warning(f"No se pudo generar el Excel: {e}")
+
                     else:
                         st.markdown("*Sin resultados para esta consulta.*")
                     cursor.close()
