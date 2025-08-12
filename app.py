@@ -276,7 +276,7 @@ sql_prompt = PromptTemplate(
    - Ejemplo: "temporada" → DESC_TEMPORADA
    - Ejemplo: "producto" → DESC_ARTICULO
    - Ejemplo: "código de tienda" → COD_TIENDA
-
+    Un articulo es solo cuando el DESC_TIPOARTICULO = "MODE". Si DESC_TIPOARTICULO = "DIEN" Entonces considerar como un servicio
     La columna SOCIEDAD_CO representa al pais 1000 = "Chile", 2000 = "Perú" y 3000 = "Bolivia" siempre que se mencione pais, usa esta regla.
     
    Cuando el usuario mencione palabras que parecen referirse a nombres de marcas o productos (por ejemplo: "Levis", "Nike", "Adidas", etc.), **búscalas en DESC_MARCA**.
@@ -289,7 +289,7 @@ sql_prompt = PromptTemplate(
 
    Cuando DESC_ARTICULO in ("Bolsa mediana LEVI'S®","Bolsa chica LEVI'S®","Bolsa grande LEVI'S®") no se considera un articulo, si no una Bolsa. Si se pregunta cuantas bolsas usa DESC_ARTICULO in ("Bolsa mediana LEVI'S®","Bolsa chica LEVI'S®","Bolsa grande LEVI'S®") y si se pregunta
    por Bolsas medianas usa DESC_ARTICULO = ("Bolsa mediana LEVI'S®") , bolsa chica usa  DESC_ARTICULO = ("Bolsa chica LEVI'S®"), y bolsa grande usa  DESC_ARTICULO = ("Bolsa grande LEVI'S®")
-
+   
 2. Si el usuario pide:
    - "¿Cuántas tiendas?" o "total de tiendas": usa COUNT(DISTINCT DESC_TIENDA) where DESC_TIENDA <> ("Centro de Distribución LEVI","CENTRO DISTRIBUCION LEVIS PERU")
    - "¿Cuántos canales?" → COUNT(DISTINCT DESC_CANAL)
@@ -342,6 +342,8 @@ sql_prompt = PromptTemplate(
     “¿en qué país se vende…?”, no pidas un país específico; agrupa por SOCIEDAD_CO y
     mapea el nombre del país con el CASE.
 Cuando se reemplace un valor como “ese artículo”, “esa tienda”, etc., asegúrate de utilizar siempre `LIKE '%valor%'` en lugar de `=` para evitar errores por coincidencias exactas.
+
+20. Si se habla de "Accesorios", "Bottoms", "Tops", "Customization", "Insumos" son Lineas de articulos y se considera el campo DESC_LINEA.
 
 🔐 Recuerda usar WHERE, GROUP BY o ORDER BY cuando el usuario pregunte por filtros, agrupaciones o rankings.
 
