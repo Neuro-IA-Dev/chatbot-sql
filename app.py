@@ -348,7 +348,10 @@ import datetime as _dt
 from typing import Optional, Tuple
 
 # Palabras que delatan montos:
-_MONEY_KEYS = r"(venta|ventas|ingreso|ingresos|margen|utilidad|gm|revenue|sales|facturaci[oó]n)"
+_MONEY_KEYS = (
+    r"(venta|ventas|ingreso|ingresos|margen|utilidad|gm|revenue|sales|facturaci[oó]n|"
+    r"precio|precios|car[oa]s?|barat[oa]s?|cost[eo]s?|ticket\s*promedio|valor(?:es)?)"
+)
 # Palabras que delatan fechas explícitas:
 _DATE_KEYS = r"(hoy|ayer|semana|mes|año|anio|últim|ultimo|desde|hasta|entre|rango|202\d|20\d\d|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)"
 
