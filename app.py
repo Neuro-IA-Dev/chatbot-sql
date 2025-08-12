@@ -791,8 +791,7 @@ if _solo_conteo_o_listado_de_paises(pregunta_con_contexto):
         " Nota: Si la pregunta es 'cuántos países hay' o 'lista/descripcion de países', "
         "no filtres por MONEDA y devuelve DOS SELECTs: "
         "(1) conteo de países distintos; "
-        "(2) listado DISTINCT del CASE SOCIEDAD_CO->nombre de país."
-    )
+        "(2) listado DISTINCT del CASE SOCIEDAD_CO->nombre de país.")
         prompt_text = sql_prompt.format(pregunta=pregunta_con_contexto)
         sql_query = llm.predict(prompt_text).replace("```sql", "").replace("```", "").strip()
 
