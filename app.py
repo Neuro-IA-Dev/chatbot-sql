@@ -419,57 +419,58 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
     if not any(flags.values()):
         return None
 
-    st.info("Antes de ejecutar, aclaremos algunos detalles para evitar resultados ambiguos 👇")
+st.info("Antes de ejecutar, aclaremos algunos detalles para evitar resultados ambiguos 👇")
 
-    st.session_state.setdefault("clarif_moneda", None)
-    st.session_state.setdefault("clarif_fecha_desde", None)
-    st.session_state.setdefault("clarif_fecha_hasta", None)
-    st.session_state.setdefault("clarif_excluir_cd", True)
+st.session_state.setdefault("clarif_moneda", None)
+st.session_state.setdefault("clarif_fecha_desde", None)
+st.session_state.setdefault("clarif_fecha_hasta", None)
+st.session_state.setdefault("clarif_excluir_cd", True)
 
-        # Moneda
-    if flags["moneda"]:
-        st.subheader("Moneda")
-        st.session_state["clarif_moneda"] = st.radio(
-            "¿En qué moneda quieres el cálculo?",
-            options=["CLP", "USD"],
-            horizontal=True,
-            key="k_moneda_radio"
-        )
+# Moneda
+if flags["moneda"]:
+    st.subheader("Moneda")
+    st.session_state["clarif_moneda"] = st.radio(
+        "¿En qué moneda quieres el cálculo?",
+        options=["CLP", "USD"],
+        horizontal=True,
+        key="k_moneda_radio"
+    )
 
-    # Rango de fechas (usa date_input para evitar formatos inválidos)
-    if flags["fecha"]:
-        st.subheader("Rango de fechas")
-        hoy = _dt.date.today()
-        desde_def = hoy - _dt.timedelta(days=30)
-       val = st.date_input(
-    "Selecciona el rango",
-    value=(desde_def, hoy),
-    key="k_rango_fechas"
-)
+# Rango de fechas (usa date_input para evitar formatos inválidos)
+if flags["fecha"]:
+    st.subheader("Rango de fechas")
+    hoy = _dt.date.today()
+    desde_def = hoy - _dt.timedelta(days=30)
 
-# Puede ser date o (date, date)
-if isinstance(val, tuple) and len(val) == 2:
-    d, h = val
-else:
-    d, h = val, None  # usuario escogió solo la fecha inicial
+    val = st.date_input(
+        "Selecciona el rango",
+        value=(desde_def, hoy),
+        key="k_rango_fechas"
+    )
 
-st.session_state["clarif_fecha_desde"] = d
-st.session_state["clarif_fecha_hasta"] = h
+    # Puede ser date o (date, date)
+    if isinstance(val, tuple) and len(val) == 2:
+        d, h = val
+    else:
+        d, h = val, None  # usuario escogió solo la fecha inicial
 
-# Si aún no hay fecha final, detenemos el flujo con un aviso
-if h is None:
-    st.caption("Elige también la fecha de término para continuar.")
-    st.stop()
+    st.session_state["clarif_fecha_desde"] = d
+    st.session_state["clarif_fecha_hasta"] = h
 
+    if h is None:
+        st.caption("Elige también la fecha de término para continuar.")
+        st.stop()
 
-    # Tienda vs CD
-    if flags["tienda_vs_cd"]:
-        st.subheader("¿Centro de distribución?")
-        st.session_state["clarif_excluir_cd"] = st.checkbox(
-            "Excluir 'Centro de Distribución LEVI' de los cálculos (recomendado)",
-            value=True,
-            key="k_excluir_cd"
-        )
+# Tienda vs CD
+if flags["tienda_vs_cd"]:
+    st.subheader("Tipo de ubicación")
+    excluir = st.checkbox(
+        "Excluir Centros de Distribución (CD)",
+        value=True,
+        key="k_excluir_cd"
+    )
+    st.session_state["clarif_excluir_cd"] = excluir
+
 
 
     if st.button("✅ Continuar con estas opciones", type="primary", key="btn_continuar_opciones"):
