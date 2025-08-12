@@ -801,11 +801,11 @@ sql_query = llm.predict(prompt_text).replace("```sql", "").replace("```", "").st
 
 
         # 4) Forzar DISTINCT si corresponde
-        sql_query = forzar_distinct_canal_si_corresponde(pregunta_con_contexto, sql_query)
+ sql_query = forzar_distinct_canal_si_corresponde(pregunta_con_contexto, sql_query)
 
         # 5) Preparar guardado en cache
-        embedding = obtener_embedding(pregunta)
-        guardar_en_cache_pending = embedding if embedding else None
+ embedding = obtener_embedding(pregunta)
+ guardar_en_cache_pending = embedding if embedding else None
 
 # 6) Ejecutar SQL (soporta múltiples SELECT separados por ';') — SOLO si hay SQL
 if pregunta and isinstance(sql_query, str) and sql_query.strip():
