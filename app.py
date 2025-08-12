@@ -322,7 +322,8 @@ sql_prompt = PromptTemplate(
 18. Si la consulta es por país (ranking, “más vende”, “por país”, etc.):
     - Agrupa por SOCIEDAD_CO y decodifica el nombre con:
       CASE SOCIEDAD_CO WHEN '1000' THEN 'Chile' WHEN '2000' THEN 'Perú' WHEN '3000' THEN 'Bolivia' END AS PAIS
-
+19. Cuando la pregunta use “se vende / vendido(s)” (ventas por unidades),
+    EXCLUYE devoluciones: agrega WHERE UNIDADES > 0.
 Cuando se reemplace un valor como “ese artículo”, “esa tienda”, etc., asegúrate de utilizar siempre `LIKE '%valor%'` en lugar de `=` para evitar errores por coincidencias exactas.
 
 🔐 Recuerda usar WHERE, GROUP BY o ORDER BY cuando el usuario pregunte por filtros, agrupaciones o rankings.
@@ -542,7 +543,8 @@ def _agregacion_por_pais(texto: str) -> bool:
     patrones = (
         r"(por\s+pa[ií]s|seg[uú]n\s+pa[ií]s|ranking\s+de\s+pa[ií]ses|"
         r"top\s+\d+\s+pa[ií]ses|comparaci[oó]n\s+por\s+pa[ií]s|"
-        r"cu[aá]l(?:es)?\s+es\s+el\s+pa[ií]s\s+que\s+(?:m[aá]s|menos))"
+        r"cu[aá]l(?:es)?\s+es\s+el\s+pa[ií]s\s+que\s+(?:m[aá]s|menos)|"
+        r"en\s+qu[eé]\s+pa[ií]s\s+se\s+vende\s+(?:m[aá]s|menos))"
     )
     return bool(re.search(patrones, texto, re.I))
 
