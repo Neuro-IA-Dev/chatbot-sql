@@ -344,7 +344,7 @@ sql_prompt = PromptTemplate(
    Cuando filtres por estos campos descriptivos (DESC_...), usa SIEMPRE la cláusula LIKE '%valor%' en lugar de =, para permitir coincidencias parciales o mayúsculas/minúsculas.
 
    Cuando DESC_TIENDA sea igual a "Centro de Distribución LEVI" o "CENTRO DISTRIBUCION LEVIS PERU" No se considera como una tienda, si no como "Centro de distribución" y no se contabiliza como tienda para ningun calculo.
-
+   Para considerarse articulo el campo DESC_ARTICULO no debe estar en "Bolsa mediana LEVI'S®", "Bolsa chica LEVI'S®","Bolsa grande LEVI'S®") Todo lo que DESC_ARTICULO contenga "bolsa" se considera un nuevo TIPO = "Bolsa"
    Cuando DESC_ARTICULO in ("Bolsa mediana LEVI'S®","Bolsa chica LEVI'S®","Bolsa grande LEVI'S®") no se considera un articulo, si no una Bolsa. Si se pregunta cuantas bolsas usa DESC_ARTICULO in ("Bolsa mediana LEVI'S®","Bolsa chica LEVI'S®","Bolsa grande LEVI'S®") y si se pregunta
    por Bolsas medianas usa DESC_ARTICULO = ("Bolsa mediana LEVI'S®") , bolsa chica usa  DESC_ARTICULO = ("Bolsa chica LEVI'S®"), y bolsa grande usa  DESC_ARTICULO = ("Bolsa grande LEVI'S®")
    
