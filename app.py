@@ -194,7 +194,7 @@ sql_prompt = PromptTemplate(
 
 12. Cuando TIPO_DOC es BO quiere decir que es BOLETA
 
-13. Unidades negativas son devoluciones
+13. Unidades negativas son devoluciones, si se pregunta por precios bajos o baratos, solo considerar unidades mayores a 0
 
 14. EL DESC_ARTICULO = "DESPACHO A DOMICILIO" no se considera articulo si no un servicio. 
 
