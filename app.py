@@ -393,7 +393,9 @@ Packing Bags, Pants, Patches, Pines, Shirts, Sin Tipo, Sweaters, Sweatshirts, Ta
   seguir mostrando `DESC_ARTICULO` (no `DESC_TIPO`) salvo que explícitamente pidan “por tipo”.
 - Sólo cuando la intención sea un **resumen por tipo** (ej. “ventas por tipo”), agrupa por `DESC_TIPO`.
 
-
+23. Si un pronombre (ej. “ese pin”, “ese artículo”, “ese producto”) se resolvió a una
+    descripción concreta (de contexto) y corresponde a un ARTÍCULO, el filtro DEBE ser
+    DESC_ARTICULO LIKE '%<valor>%' con UNIDADES > 0, y NO se debe usar DESC_TIPO.
 🔐 Recuerda usar WHERE, GROUP BY o ORDER BY cuando el usuario pregunte por filtros, agrupaciones o rankings.
 
 🖍️ Cuando generes la consulta SQL, no expliques la respuesta —solo entrega el SQL limpio y optimizado para MySQL.
@@ -909,6 +911,16 @@ if pregunta:
 
         # 3) Aplicar contexto y guía de TIPO
         pregunta_con_contexto = aplicar_contexto(pregunta)
+        # Si el pronombre se resolvió a ARTÍCULO, obliga a filtrar por DESC_ARTICULO
+# y prohíbe usar DESC_TIPO en esta consulta.
+if st.session_state.get("__last_ref_replacement__") == "DESC_ARTICULO":
+    art_val = st.session_state.get("__last_ref_value__", "")
+    if art_val:
+        pregunta_con_contexto += (
+            f" Usa estrictamente DESC_ARTICULO LIKE '%{art_val}%' (case-insensitive) "
+            f"y UNIDADES > 0. No uses DESC_TIPO para este filtro."
+        )
+
         pregunta_con_contexto = _anotar_tipo_en_pregunta(pregunta_con_contexto)
 
         # Si la pregunta es “meta países” (cuántos/lista/descripción) NO pidas moneda/país y sugiere dos SELECTs
