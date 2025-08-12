@@ -34,6 +34,26 @@ def obtener_ip_publica():
         return requests.get("https://api.ipify.org", timeout=2).text
     except Exception:
         return None
+def _to_yyyymmdd(v) -> str:
+    """Acepta date, datetime o string dd/mm/yyyy y devuelve 'YYYYMMDD'."""
+    if isinstance(v, _dt.date):
+        return v.strftime("%Y%m%d")
+    if isinstance(v, str):
+        v = v.strip()
+        # dd/mm/yyyy
+        try:
+            d = _dt.datetime.strptime(v, "%d/%m/%Y").date()
+            return d.strftime("%Y%m%d")
+        except Exception:
+            pass
+        # yyyy-mm-dd (por si llega así)
+        try:
+            d = _dt.datetime.strptime(v, "%Y-%m-%d").date()
+            return d.strftime("%Y%m%d")
+        except Exception:
+            pass
+    # si no se pudo parsear, devuelve tal cual
+    return str(v)
 
 # Ejecutar y mostrar IP saliente (útil para Remote MySQL en cPanel)
 ip_actual = obtener_ip_publica()
@@ -182,6 +202,9 @@ sql_prompt = PromptTemplate(
 
 16. Cuando se hable de un articulo, usar DESC_ARTICULO para mostrarlo a menos que se pida solo el Codigo. ejemplo "Jeans mas vendido de mujer por modelo, talla, largo y color"  DESC_ARTICULO, COD_MODELO, etc.
 
+17. Cuando filtres por FECHA_DOCUMENTO, usa SIEMPRE formato 'YYYYMMDD' **sin guiones**. Ejemplo:
+    WHERE FECHA_DOCUMENTO BETWEEN '20250101' AND '20250131'
+    (La columna es numérica/texto sin guiones; NO uses '2025-01-01'.)
 Cuando se reemplace un valor como “ese artículo”, “esa tienda”, etc., asegúrate de utilizar siempre `LIKE '%valor%'` en lugar de `=` para evitar errores por coincidencias exactas.
 
 🔐 Recuerda usar WHERE, GROUP BY o ORDER BY cuando el usuario pregunte por filtros, agrupaciones o rankings.
@@ -366,26 +389,28 @@ def _defaults_fecha() -> Tuple[str, str, str]:
     hasta_sql = hoy.strftime("%Y%m%d")
     return desde_str, hasta_str, f"{desde_sql}-{hasta_sql}"
 
-def _inyectar_aclaraciones_en_pregunta(pregunta: str, moneda: Optional[str], rango: Optional[Tuple[str,str]], excluir_cd: Optional[bool]) -> str:
+def _inyectar_aclaraciones_en_pregunta(pregunta: str, moneda, rango, excluir_cd):
     partes = [pregunta.strip()]
 
     if moneda:
-        if moneda == "CLP":
-            partes.append(" en moneda CLP")
-        elif moneda == "USD":
-            partes.append(" en moneda USD")
+        partes.append(f" en moneda {moneda}")
 
     if rango:
         d, h = rango
-        partes.append(f" entre {d} y {h}")
+        d_norm = _to_yyyymmdd(d)
+        h_norm = _to_yyyymmdd(h)
+        # Díselo explícito al modelo
+        partes.append(
+            f" usando FECHA_DOCUMENTO entre {d_norm} y {h_norm} (formato YYYYMMDD sin guiones)"
+        )
 
     if excluir_cd is not None:
-        if excluir_cd:
-            partes.append(" excluyendo el Centro de Distribución")
-        else:
-            partes.append(" incluyendo el Centro de Distribución")
-
+        partes.append(
+            " excluyendo el Centro de Distribución" if excluir_cd
+            else " incluyendo el Centro de Distribución"
+        )
     return " ".join(partes).strip()
+
 
 # UI de aclaración (usa st.session_state para ciclar hasta que el usuario confirme)
 def manejar_aclaracion(pregunta: str) -> Optional[str]:
@@ -401,7 +426,39 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
     st.session_state.setdefault("clarif_fecha_hasta", None)
     st.session_state.setdefault("clarif_excluir_cd", True)
 
-    # ... (UI de moneda/fechas/cd)
+        # Moneda
+    if flags["moneda"]:
+        st.subheader("Moneda")
+        st.session_state["clarif_moneda"] = st.radio(
+            "¿En qué moneda quieres el cálculo?",
+            options=["CLP", "USD"],
+            horizontal=True,
+            key="k_moneda_radio"
+        )
+
+    # Rango de fechas (usa date_input para evitar formatos inválidos)
+    if flags["fecha"]:
+        st.subheader("Rango de fechas")
+        hoy = _dt.date.today()
+        desde_def = hoy - _dt.timedelta(days=30)
+        d, h = st.date_input(
+            "Selecciona el rango",
+            value=(desde_def, hoy),
+            key="k_rango_fechas"
+        )
+        # Guarda en session_state para leerlos al confirmar
+        st.session_state["clarif_fecha_desde"] = d
+        st.session_state["clarif_fecha_hasta"] = h
+
+    # Tienda vs CD
+    if flags["tienda_vs_cd"]:
+        st.subheader("¿Centro de distribución?")
+        st.session_state["clarif_excluir_cd"] = st.checkbox(
+            "Excluir 'Centro de Distribución LEVI' de los cálculos (recomendado)",
+            value=True,
+            key="k_excluir_cd"
+        )
+
 
     if st.button("✅ Continuar con estas opciones", type="primary", key="btn_continuar_opciones"):
         moneda = st.session_state.get("clarif_moneda") if flags["moneda"] else None
