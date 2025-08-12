@@ -336,56 +336,59 @@ if pregunta:
         embedding = obtener_embedding(pregunta)
         guardar_en_cache_pending = embedding if embedding else None
 
-   # 6) Ejecutar SQL
-try:
-    if not es_consulta_segura(sql_query):
-        st.error("❌ Consulta peligrosa bloqueada.")
-        resultado = "Consulta bloqueada"
-    else:
-        conn = connect_db()
-        if conn is None:
-            # Mostramos igual el SQL para depurar prompt aunque no haya DB
-            st.info("🔌 Sin conexión a MySQL: se muestra solo la consulta generada.")
-            st.code(sql_query, language="sql")
-            resultado = "Sin conexión a MySQL"
+       # 6) Ejecutar SQL
+    try:
+        if not es_consulta_segura(sql_query):
+            st.error("❌ Consulta peligrosa bloqueada.")
+            resultado = "Consulta bloqueada"
         else:
-            cursor = conn.cursor()
-            cursor.execute(sql_query)
-
-            if sql_query.lower().startswith("select"):
-                rows = cursor.fetchall()
-                if cursor.description:
-                    columns = [col[0] for col in cursor.description]
-                    df = pd.DataFrame(rows, columns=columns)
-                    if "FECHA_DOCUMENTO" in df.columns:
-                        df["FECHA_DOCUMENTO"] = pd.to_datetime(
-                            df["FECHA_DOCUMENTO"].astype(str), format="%Y%m%d", errors="coerce"
-                        ).dt.strftime("%d/%m/%Y")
-                    st.dataframe(df)
-                    try:
-    xlsx_bytes = make_excel_download_bytes(df, sheet_name="Resultado")
-    st.download_button(
-        label="⬇️ Descargar en Excel",
-        data=xlsx_bytes,
-        file_name="resultado_consulta.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        key="dl_actual"
-    )
-except Exception as e:
-    st.warning(f"No se pudo generar el Excel: {e}")
-                    resultado = f"{len(df)} filas"
-                    actualizar_contexto(df)
-                else:
-                    resultado = "La consulta no devolvió resultados."
+            conn = connect_db()
+            if conn is None:
+                # Mostramos igual el SQL para depurar prompt aunque no haya DB
+                st.info("🔌 Sin conexión a MySQL: se muestra solo la consulta generada.")
+                st.code(sql_query, language="sql")
+                resultado = "Sin conexión a MySQL"
             else:
-                conn.commit()
-                resultado = "Consulta ejecutada."
+                cursor = conn.cursor()
+                cursor.execute(sql_query)
 
-            cursor.close()
-            conn.close()
-except Exception as e:
-    resultado = f"❌ Error ejecutando SQL: {e}"
+                if sql_query.lower().startswith("select"):
+                    rows = cursor.fetchall()
+                    if cursor.description:
+                        columns = [col[0] for col in cursor.description]
+                        df = pd.DataFrame(rows, columns=columns)
+                        if "FECHA_DOCUMENTO" in df.columns:
+                            df["FECHA_DOCUMENTO"] = pd.to_datetime(
+                                df["FECHA_DOCUMENTO"].astype(str), format="%Y%m%d", errors="coerce"
+                            ).dt.strftime("%d/%m/%Y")
 
+                        st.dataframe(df)
+
+                        # ↓↓↓ Descargar Excel (bien indentado)
+                        try:
+                            xlsx_bytes = make_excel_download_bytes(df, sheet_name="Resultado")
+                            st.download_button(
+                                label="⬇️ Descargar en Excel",
+                                data=xlsx_bytes,
+                                file_name="resultado_consulta.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                key="dl_actual"
+                            )
+                        except Exception as e:
+                            st.warning(f"No se pudo generar el Excel: {e}")
+
+                        resultado = f"{len(df)} filas"
+                        actualizar_contexto(df)
+                    else:
+                        resultado = "La consulta no devolvió resultados."
+                else:
+                    conn.commit()
+                    resultado = "Consulta ejecutada."
+
+                cursor.close()
+                conn.close()
+    except Exception as e:
+        resultado = f"❌ Error ejecutando SQL: {e}"
 
     # 7) Guardar conversación
     st.session_state["conversacion"].append({
@@ -394,6 +397,7 @@ except Exception as e:
         "sql": sql_query,
         "cache": guardar_en_cache_pending
     })
+
 # MOSTRAR TODAS LAS INTERACCIONES COMO CHAT
 # UI MEJORADA EN STREAMLIT
 # (Esta parte va justo al final del archivo app.py, reemplazando el bloque de visualización actual de interacciones)
@@ -445,18 +449,20 @@ if st.session_state["conversacion"]:
                         if "FECHA_DOCUMENTO" in df_hist.columns:
                             df_hist["FECHA_DOCUMENTO"] = pd.to_datetime(df_hist["FECHA_DOCUMENTO"].astype(str), errors="coerce", format="%Y%m%d").dt.strftime("%d/%m/%Y")
                         st.dataframe(df_hist, hide_index=True)
-                        # ↓↓↓ NUEVO: descarga Excel para cada ítem del historial
-try:
-    xlsx_hist = make_excel_download_bytes(df_hist, sheet_name="Historial")
-    st.download_button(
-        label="⬇️ Descargar en Excel",
-        data=xlsx_hist,
-        file_name=f"resultado_hist_{i}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        key=f"dl_hist_{i}"
-    )
-except Exception as e:
-    st.warning(f"No se pudo generar el Excel: {e}")
+
+                        # ↓↓↓ Descargar Excel para historial (bien indentado)
+                        try:
+                            xlsx_hist = make_excel_download_bytes(df_hist, sheet_name="Historial")
+                            st.download_button(
+                                label="⬇️ Descargar en Excel",
+                                data=xlsx_hist,
+                                file_name=f"resultado_hist_{i}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                key=f"dl_hist_{i}"
+                            )
+                        except Exception as e:
+                            st.warning(f"No se pudo generar el Excel: {e}")
+
 
                     else:
                         st.markdown("*Sin resultados para esta consulta.*")
