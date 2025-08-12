@@ -41,6 +41,20 @@ def _fmt_money(v: float) -> str:
     s = f"{float(v):,.2f}"
     # 7.765.093,83
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
+# --- Centros de distribución a excluir (normalizados en MAYÚSCULAS) ---
+CD_EXCLUSIONES = {
+    "CENTRO DE DISTRIBUCIÓN LEVI",   # con tilde
+    "CENTRO DISTRIBUCION LEVI",      # sin tilde
+    "CENTRO DISTRIBUCION LEVIS PERU"
+}
+
+def es_centro_distribucion(nombre: str) -> bool:
+    """True si 'nombre' corresponde a un centro de distribución."""
+    if not isinstance(nombre, str):
+        return False
+    t = nombre.strip().upper()
+    # match exacto o por inclusión (por si vienen sufijos/prefijos)
+    return any(x == t or x in t for x in CD_EXCLUSIONES)
 
 def aplicar_formato_monetario(df: pd.DataFrame) -> pd.DataFrame:
     """Formatea columnas monetarias: 7.765.093,83 y agrega sufijo de moneda.
@@ -271,13 +285,13 @@ sql_prompt = PromptTemplate(
 
    Cuando filtres por estos campos descriptivos (DESC_...), usa SIEMPRE la cláusula LIKE '%valor%' en lugar de =, para permitir coincidencias parciales o mayúsculas/minúsculas.
 
-   Cuando DESC_TIENDA sea igual a "Centro de Distribución LEVI" No se considera como una tienda, si no como "Centro de distribución" y no se contabiliza como tienda para ningun calculo.
+   Cuando DESC_TIENDA sea igual a "Centro de Distribución LEVI" o "CENTRO DISTRIBUCION LEVIS PERU" No se considera como una tienda, si no como "Centro de distribución" y no se contabiliza como tienda para ningun calculo.
 
    Cuando DESC_ARTICULO in ("Bolsa mediana LEVI'S®","Bolsa chica LEVI'S®","Bolsa grande LEVI'S®") no se considera un articulo, si no una Bolsa. Si se pregunta cuantas bolsas usa DESC_ARTICULO in ("Bolsa mediana LEVI'S®","Bolsa chica LEVI'S®","Bolsa grande LEVI'S®") y si se pregunta
    por Bolsas medianas usa DESC_ARTICULO = ("Bolsa mediana LEVI'S®") , bolsa chica usa  DESC_ARTICULO = ("Bolsa chica LEVI'S®"), y bolsa grande usa  DESC_ARTICULO = ("Bolsa grande LEVI'S®")
 
 2. Si el usuario pide:
-   - "¿Cuántas tiendas?" o "total de tiendas": usa COUNT(DISTINCT DESC_TIENDA) where DESC_TIENDA <> "Centro de Distribución LEVI"
+   - "¿Cuántas tiendas?" o "total de tiendas": usa COUNT(DISTINCT DESC_TIENDA) where DESC_TIENDA <> ("Centro de Distribución LEVI","CENTRO DISTRIBUCION LEVIS PERU")
    - "¿Cuántos canales?" → COUNT(DISTINCT DESC_CANAL)
    - "¿Cuántos clientes?" → COUNT(DISTINCT NOMBRE_CLIENTE)
 
@@ -386,10 +400,13 @@ def actualizar_contexto(df):
     for canonico, posibles in alias.items():
         for col in posibles:
             if col in df.columns and not df[col].isnull().all():
-                # Guarda el primer valor no nulo visible
-                valor = str(df[col].dropna().iloc[0])
-                if valor.strip():
-                    st.session_state["contexto"][canonico] = valor
+                valor = str(df[col].dropna().iloc[0]).strip()
+                if not valor:
+                    continue
+                # ⬇️ NUEVO: no persistir CDs en contexto
+                if canonico == "DESC_TIENDA" and es_centro_distribucion(valor):
+                    continue
+                st.session_state["contexto"][canonico] = valor
                 break
 def forzar_distinct_canal_si_corresponde(pregunta, sql_generado):
     """
@@ -529,7 +546,11 @@ def _habla_de_tienda(texto: str) -> bool:
 
 def _menciona_cd(texto: str) -> bool:
     # si el usuario ya dijo explícitamente CD o ese nombre, no preguntamos
-    return bool(re.search(r"centro\s+de\s+distribuci[oó]n", texto, re.I) or re.search(r"\bCD\b", texto, re.I))
+        return bool(
+        re.search(r"centro\s+de\s+distribuci[oó]n", texto, re.I)
+        or re.search(r"\bcentro\s+distribucion\b", texto, re.I)   # ⬅️ NUEVO
+        or re.search(r"\bCD\b", texto, re.I)
+    )
 # --- País: detectores (definir una sola vez) -----------------
 _COUNTRY_REGEX = r"\b(chile|per[uú]|bolivia|pa[ií]s(?:es)?)\b"
 
