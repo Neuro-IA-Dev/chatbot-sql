@@ -11,6 +11,8 @@ from langchain.chat_models import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from openai import OpenAI
 import re
+# Patrón país usado por los detectores (debe declararse antes de usarse)
+_COUNTRY_REGEX = r"\b(chile|per[uú]|bolivia|pa[ií]s(?:es)?)\b"
 
 # CONFIG STREAMLIT
 st.set_page_config(page_title="Asistente Inteligente de Ventas Retail", page_icon="🧠")
@@ -33,6 +35,43 @@ def obtener_ip_publica():
         return requests.get("https://api.ipify.org", timeout=2).text
     except Exception:
         return None
+def _fmt_money(v: float) -> str:
+    if pd.isna(v):
+        return ""
+    s = f"{float(v):,.2f}"
+    return s.replace(",", "X").replace(".", ",").replace("X", ".")
+
+def aplicar_formato_monetario(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    # columnas candidatos
+    money_cols = [c for c in df.columns if c.upper() in (
+        "INGRESOS","COSTOS","PRECIO","PRECIO_PROMEDIO","MARGEN","GM","VALOR","VALORES","TOTAL"
+    )]
+    if not money_cols:
+        return df
+
+    df2 = df.copy()
+    if "MONEDA" in df2.columns:
+        for c in money_cols:
+            df2[c] = df2.apply(lambda r: f"{_fmt_money(r[c])} {r['MONEDA']}" if pd.notnull(r[c]) else r[c], axis=1)
+    else:
+        # usa la última(s) moneda(s) confirmada(s) por el usuario si hay solo una
+        last = st.session_state.get("clarif_moneda_last")
+        suf = None
+        if isinstance(last, list) and len(last) == 1:
+            suf = last[0]
+        elif isinstance(last, str):
+            suf = last
+        if suf:
+            for c in money_cols:
+                df2[c] = df2[c].map(lambda x: f"{_fmt_money(x)} {suf}" if pd.notnull(x) else x)
+        else:
+            # sin info de moneda → solo formato numérico europeo
+            for c in money_cols:
+                df2[c] = df2[c].map(lambda x: _fmt_money(x) if pd.notnull(x) else x)
+    return df2
+
 def _to_yyyymmdd(v) -> str:
     """Acepta date, datetime o string dd/mm/yyyy y devuelve 'YYYYMMDD'."""
     if isinstance(v, _dt.date):
@@ -411,9 +450,6 @@ def _agregacion_por_pais(texto: str) -> bool:
 # Palabras que delatan fechas explícitas:
 _DATE_KEYS = r"(hoy|ayer|semana|mes|año|anio|últim|ultimo|desde|hasta|entre|rango|202\d|20\d\d|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)"
 
-def _tiene_moneda(texto: str) -> bool:
-    # detecta si el usuario ya dijo CLP/CH$ o USD/dólar
-    return bool(re.search(r"\b(clp|ch\$|pesos?)\b", texto, re.I) or re.search(r"\b(usd|d[oó]lares?)\b", texto, re.I))
 
 
 # Mapa utilitario para SOCIEDAD_CO
@@ -521,12 +557,12 @@ def _inyectar_aclaraciones_en_pregunta(pregunta: str, moneda, rango, excluir_cd)
         )
     return " ".join(partes).strip()
 
-# ===== UTILIDADES para monedas por país (agregar antes de manejar_aclaracion) =====
+
+# ===== Monedas por país =====
 _LOCAL_CURRENCY_BY_SOC = {"1000": "CLP", "2000": "PEN", "3000": "BOB"}
 _SOC_BY_NAME = {"chile": "1000", "perú": "2000", "peru": "2000", "bolivia": "3000"}
 
 def _extraer_paises(texto: str) -> set[str]:
-    """Devuelve set de SOCIEDAD_CO explícitos en el texto (por nombre o código)."""
     codes = set()
     for k, v in _SOC_BY_NAME.items():
         if re.search(rf"\b{k}\b", texto, re.I):
@@ -536,21 +572,20 @@ def _extraer_paises(texto: str) -> set[str]:
     return codes
 
 def _sugerir_monedas(paises: set[str], es_agrupado_por_pais: bool) -> list[str]:
-    """Regla: multi-país o agrupación por país -> USD; 1 país -> USD + local."""
     if es_agrupado_por_pais or len(paises) != 1:
         return ["USD"]
     unico = next(iter(paises))
     return ["USD", _LOCAL_CURRENCY_BY_SOC.get(unico, "USD")]
-# ================================================================================
+
+def _tiene_moneda(texto: str) -> bool:
+    # Detecta USD/CLP/PEN/BOB
+    return bool(re.search(r"\b(usd|clp|pen|bob|d[oó]lar(?:es)?|pesos?)\b", texto, re.I))
 
 
 def manejar_aclaracion(pregunta: str) -> Optional[str]:
-    """Si requiere aclaración, muestra UI y devuelve una 'pregunta enriquecida' al confirmar.
-    Si no requiere, devuelve None y el flujo sigue normal.
-    """
     flags = _necesita_aclaracion(pregunta)
     if not any(flags.values()):
-        return None  # no hace falta aclarar nada
+        return None
 
     st.info("Antes de ejecutar, aclaremos algunos detalles para evitar resultados ambiguos 👇")
 
@@ -560,46 +595,40 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
     st.session_state.setdefault("clarif_fecha_hasta", None)
     st.session_state.setdefault("clarif_excluir_cd", True)
 
-    # -------------------- Países detectados en el texto y sugerencia de monedas
-    paises_texto = _extraer_paises(pregunta)                      # {"1000"} / {"1000","2000"} / set()
-    es_agrupado = _agregacion_por_pais(pregunta)                  # ranking / "por país" / etc.
-    sugeridas = _sugerir_monedas(paises_texto, es_agrupado)       # ["USD"] o ["USD","CLP"/"PEN"/"BOB"]
+    # Países detectados y sugerencia de monedas
+    paises_texto = _extraer_paises(pregunta)
+    es_agrupado = _agregacion_por_pais(pregunta)
+    sugeridas = _sugerir_monedas(paises_texto, es_agrupado)
 
-    # Monedas PERMITIDAS (regla: multi-país o ranking → solo USD; 1 país → USD + local)
+    # Monedas permitidas según regla
     if es_agrupado or len(paises_texto) != 1:
         monedas_permitidas = ["USD"]
     elif len(paises_texto) == 1:
         local = _LOCAL_CURRENCY_BY_SOC[list(paises_texto)[0]]
         monedas_permitidas = ["USD", local]
     else:
-        # Si no hay país en el texto y no es agregado por país, deja todas; luego se valida
         monedas_permitidas = ["USD", "CLP", "PEN", "BOB"]
 
-    # -------------------- Moneda
+    # Moneda
     if flags["moneda"]:
         st.subheader("Moneda")
         st.session_state["clarif_moneda"] = st.multiselect(
             "¿En qué moneda(s) quieres ver los montos?",
-            options=monedas_permitidas,        # restringe según regla/país
-            default=sugeridas,                 # sugerencia automática
+            options=monedas_permitidas,
+            default=sugeridas,
             key="k_moneda_multi",
             help="Si comparas varios países o pides ranking por país, sólo USD."
         )
     else:
-        # Si el usuario no dijo moneda en el texto, proponemos por defecto
         if st.session_state.get("clarif_moneda") is None:
             st.session_state["clarif_moneda"] = sugeridas
 
-    # -------------------- Rango de fechas
+    # Rango de fechas
     if flags["fecha"]:
         st.subheader("Rango de fechas")
         hoy = _dt.date.today()
         desde_def = hoy - _dt.timedelta(days=30)
-        val = st.date_input(
-            "Selecciona el rango",
-            value=(desde_def, hoy),
-            key="k_rango_fechas",
-        )
+        val = st.date_input("Selecciona el rango", value=(desde_def, hoy), key="k_rango_fechas")
         if isinstance(val, tuple) and len(val) == 2:
             d, h = val
         else:
@@ -609,6 +638,61 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
         if h is None:
             st.caption("Elige también la fecha de término para continuar.")
             st.stop()
+
+    # País (si no viene claro en el texto y no es ranking por país)
+    pais_code, pais_label = _extraer_pais(pregunta)
+    if flags.get("pais"):
+        st.subheader("País")
+        if not pais_code:
+            pais_label = st.radio(
+                "¿Para qué país?",
+                options=["Chile", "Perú", "Bolivia"],
+                horizontal=True,
+                key="k_pais_radio",
+            )
+            pais_code = {"Chile": "1000", "Perú": "2000", "Bolivia": "3000"}[pais_label]
+        st.session_state["clarif_pais_code"] = pais_code
+        st.session_state["clarif_pais_label"] = pais_label
+
+    # Tienda vs CD
+    if flags["tienda_vs_cd"]:
+        st.subheader("Tipo de ubicación")
+        st.session_state["clarif_excluir_cd"] = st.checkbox(
+            "Excluir Centros de Distribución (CD)", value=True, key="k_excluir_cd",
+        )
+
+    # Confirmar
+    if st.button("✅ Continuar con estas opciones", type="primary", key="btn_continuar_opciones"):
+        moneda_sel = st.session_state.get("clarif_moneda")
+        d = st.session_state.get("clarif_fecha_desde") if flags["fecha"] else None
+        h = st.session_state.get("clarif_fecha_hasta") if flags["fecha"] else None
+        if flags["fecha"] and (d is None or h is None):
+            st.warning("Falta completar el rango de fechas.")
+            st.stop()
+
+        rango = (d, h) if flags["fecha"] else None
+        excluir_cd = st.session_state.get("clarif_excluir_cd") if flags["tienda_vs_cd"] else None
+        pais_code_ui = st.session_state.get("clarif_pais_code") if flags.get("pais") else None
+        pais_label_ui = st.session_state.get("clarif_pais_label") if flags.get("pais") else None
+
+        moneda_txt = ", ".join(moneda_sel) if isinstance(moneda_sel, (list, tuple, set)) else moneda_sel
+        pregunta_enriquecida = _inyectar_aclaraciones_en_pregunta(pregunta, moneda_txt, rango, excluir_cd)
+
+        if pais_code_ui and pais_label_ui:
+            pregunta_enriquecida += f" para {pais_label_ui} (SOCIEDAD_CO={pais_code_ui})"
+
+        # Guardamos la última(s) moneda(s) para formateo de resultados
+        st.session_state["clarif_moneda_last"] = moneda_sel
+
+        # Limpieza
+        for k in ["clarif_moneda","clarif_fecha_desde","clarif_fecha_hasta",
+                  "clarif_excluir_cd","clarif_pais_code","clarif_pais_label"]:
+            st.session_state.pop(k, None)
+
+        return pregunta_enriquecida
+
+    st.stop()
+
 
     # -------------------- País (tu lógica existente de país explícito)
     pais_code, pais_label = _extraer_pais(pregunta)
@@ -667,84 +751,6 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
 
     # Si aún no confirma, detenemos el flujo principal y la app se re-renderiza
     st.stop()
-# UI de aclaración (usa st.session_state para ciclar hasta que el usuario confirme)
-def manejar_aclaracion(pregunta: str) -> Optional[str]:
-    """Si requiere aclaración, muestra UI y devuelve una 'pregunta enriquecida' al confirmar.
-    Si no requiere, devuelve None y el flujo sigue normal.
-    """
-    flags = _necesita_aclaracion(pregunta)
-    if not any(flags.values()):
-        return None  # no hace falta aclarar nada
-
-    st.info("Antes de ejecutar, aclaremos algunos detalles para evitar resultados ambiguos 👇")
-
-    # Estado inicial
-    st.session_state.setdefault("clarif_moneda", None)
-    st.session_state.setdefault("clarif_fecha_desde", None)
-    st.session_state.setdefault("clarif_fecha_hasta", None)
-    st.session_state.setdefault("clarif_excluir_cd", True)
-
-    # Moneda
-    if flags["moneda"]:
-        st.subheader("Moneda")
-        st.session_state["clarif_moneda"] = st.radio(
-            "¿En qué moneda quieres el cálculo?",
-            options=["CLP", "USD"],
-            horizontal=True,
-            key="k_moneda_radio",
-        )
-
-    # Rango de fechas (date_input evita formatos inválidos)
-    if flags["fecha"]:
-        st.subheader("Rango de fechas")
-        hoy = _dt.date.today()
-        desde_def = hoy - _dt.timedelta(days=30)
-        val = st.date_input(
-            "Selecciona el rango",
-            value=(desde_def, hoy),
-            key="k_rango_fechas",
-        )
-        # Puede ser date o (date, date)
-        if isinstance(val, tuple) and len(val) == 2:
-            d, h = val
-        else:
-            d, h = val, None  # si solo eligió una fecha
-        st.session_state["clarif_fecha_desde"] = d
-        st.session_state["clarif_fecha_hasta"] = h
-        if h is None:
-            st.caption("Elige también la fecha de término para continuar.")
-            st.stop()
-    # País
-    pais_code, pais_label = _extraer_pais(pregunta)
-    if flags["pais"]:
-        st.subheader("País")
-        if not pais_code:
-            pais_label = st.radio(
-                "¿Para qué país?",
-                options=["Chile", "Perú", "Bolivia"],
-                horizontal=True,
-                key="k_pais_radio",
-            )
-            pais_code = {"Chile": "1000", "Perú": "2000", "Bolivia": "3000"}[pais_label]
-        # Guarda para leer al confirmar
-        st.session_state["clarif_pais_code"] = pais_code
-        st.session_state["clarif_pais_label"] = pais_label
-    # Tienda vs CD
-    if flags["tienda_vs_cd"]:
-        st.subheader("Tipo de ubicación")
-        st.session_state["clarif_excluir_cd"] = st.checkbox(
-            "Excluir Centros de Distribución (CD)",
-            value=True,
-            key="k_excluir_cd",
-        )
-
-    if st.button("✅ Continuar con estas opciones", type="primary", key="btn_continuar_opciones"):
-        moneda = st.session_state.get("clarif_moneda") if flags["moneda"] else None
-        d = st.session_state.get("clarif_fecha_desde") if flags["fecha"] else None
-        h = st.session_state.get("clarif_fecha_hasta") if flags["fecha"] else None
-        if flags["fecha"] and (d is None or h is None):
-            st.warning("Falta completar el rango de fechas.")
-            st.stop()
 
         rango = (d, h) if flags["fecha"] else None
         excluir_cd = st.session_state.get("clarif_excluir_cd") if flags["tienda_vs_cd"] else None
@@ -842,6 +848,7 @@ if pregunta and isinstance(sql_query, str) and sql_query.strip():
 
                     df_sub = ejecutar_select(conn, q)
                     if df_sub is not None:
+                        df_sub = aplicar_formato_monetario(df_sub)  # ⬅️ AÑADIR ESTA LÍNEA
                         dfs_mostrados += 1
                         st.subheader(f"Resultado {idx}")
                         st.dataframe(df_sub, use_container_width=True)
@@ -951,6 +958,7 @@ if st.session_state["conversacion"]:
 
                             df_hist = ejecutar_select(conn, q)
                             if df_hist is not None:
+                                df_hist = aplicar_formato_monetario(df_hist)  # ⬅️ AÑADIR
                                 st.subheader(f"Resultado {idx}")
                                 st.dataframe(df_hist, hide_index=True, use_container_width=True)
 
