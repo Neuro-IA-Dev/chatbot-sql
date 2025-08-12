@@ -169,7 +169,7 @@ sql_prompt = PromptTemplate(
    - "¿Cuántos clientes?" → COUNT(DISTINCT NOMBRE_CLIENTE)
 
 3. Siempre que se mencione:
-   - "ventas", "ingresos": usar la columna INGRESOS
+   - "ventas", "ingresos","precios": usar la columna INGRESOS
    - "costos": usar COSTOS
    - "unidades vendidas": usar UNIDADES
    - "producto", "artículo", "sku": puedes usar DESC_ARTICULO o DESC_SKU dependiendo del contexto.
