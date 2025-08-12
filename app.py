@@ -639,7 +639,7 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
             st.caption("Elige también la fecha de término para continuar.")
             st.stop()
 
-    # País (si no viene claro en el texto y no es ranking por país)
+    # País (sólo si no viene claro y no es ranking por país)
     pais_code, pais_label = _extraer_pais(pregunta)
     if flags.get("pais"):
         st.subheader("País")
@@ -661,41 +661,9 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
             "Excluir Centros de Distribución (CD)", value=True, key="k_excluir_cd",
         )
 
-    # Confirmar
+    # Confirmar (¡sólo un botón con esta key!)
     if st.button("✅ Continuar con estas opciones", type="primary", key="btn_continuar_opciones"):
         moneda_sel = st.session_state.get("clarif_moneda")
-        d = st.session_state.get("clarif_fecha_desde") if flags["fecha"] else None
-        h = st.session_state.get("clarif_fecha_hasta") if flags["fecha"] else None
-        if flags["fecha"] and (d is None or h is None):
-            st.warning("Falta completar el rango de fechas.")
-            st.stop()
-    # -------------------- País (tu lógica existente de país explícito)
-    pais_code, pais_label = _extraer_pais(pregunta)
-    if flags.get("pais"):
-        st.subheader("País")
-        if not pais_code:
-            pais_label = st.radio(
-                "¿Para qué país?",
-                options=["Chile", "Perú", "Bolivia"],
-                horizontal=True,
-                key="k_pais_radio",
-            )
-            pais_code = {"Chile": "1000", "Perú": "2000", "Bolivia": "3000"}[pais_label]
-        st.session_state["clarif_pais_code"] = pais_code
-        st.session_state["clarif_pais_label"] = pais_label
-
-    # -------------------- Tienda vs CD
-    if flags["tienda_vs_cd"]:
-        st.subheader("Tipo de ubicación")
-        st.session_state["clarif_excluir_cd"] = st.checkbox(
-            "Excluir Centros de Distribución (CD)",
-            value=True,
-            key="k_excluir_cd",
-        )
-
-    # -------------------- Confirmar
-    if st.button("✅ Continuar con estas opciones", type="primary", key="btn_continuar_opciones"):
-        moneda_sel = st.session_state.get("clarif_moneda")   # lista o None
         d = st.session_state.get("clarif_fecha_desde") if flags["fecha"] else None
         h = st.session_state.get("clarif_fecha_hasta") if flags["fecha"] else None
         if flags["fecha"] and (d is None or h is None):
@@ -704,27 +672,25 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
 
         rango = (d, h) if flags["fecha"] else None
         excluir_cd = st.session_state.get("clarif_excluir_cd") if flags["tienda_vs_cd"] else None
-
-        # País elegido en UI (si aplica)
         pais_code_ui = st.session_state.get("clarif_pais_code") if flags.get("pais") else None
         pais_label_ui = st.session_state.get("clarif_pais_label") if flags.get("pais") else None
 
-        # Construir la pregunta enriquecida (tu función actual acepta un valor; convertimos lista->texto)
         moneda_txt = ", ".join(moneda_sel) if isinstance(moneda_sel, (list, tuple, set)) else moneda_sel
         pregunta_enriquecida = _inyectar_aclaraciones_en_pregunta(pregunta, moneda_txt, rango, excluir_cd)
 
-        # Si hay país, explícitalo para que el modelo aplique SOCIEDAD_CO
         if pais_code_ui and pais_label_ui:
             pregunta_enriquecida += f" para {pais_label_ui} (SOCIEDAD_CO={pais_code_ui})"
 
-        # Limpiar estados
+        # Guarda la(s) moneda(s) confirmada(s) para formateo posterior
+        st.session_state["clarif_moneda_last"] = moneda_sel
+
+        # Limpieza
         for k in ["clarif_moneda","clarif_fecha_desde","clarif_fecha_hasta",
                   "clarif_excluir_cd","clarif_pais_code","clarif_pais_label"]:
             st.session_state.pop(k, None)
 
         return pregunta_enriquecida
 
-    # Si aún no confirma, detenemos el flujo principal y la app se re-renderiza
     st.stop()
 
 
