@@ -11,51 +11,6 @@ from langchain.chat_models import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from openai import OpenAI
 import re
-
-# =======================
-# 🎨 MEJORA GRÁFICA (ADITIVA)
-# =======================
-# Estilos globales y helpers de UI. (No eliminan nada de tu lógica.)
-st.markdown("""
-<style>
-/* Fuente y contenedor */
-html, body, [class*="css"] { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
-.block-container { max-width: 1100px; padding-top: 1rem; }
-
-/* Chips / pills */
-.pill { display:inline-block; padding:4px 10px; border-radius:999px; border:1px solid #2b3340;
-        background:#0e1116; color:#aab3c5; font-size:12px; margin-right:6px; }
-.pill b{ color:#e2e8f0; }
-
-/* Tarjeta contenedora */
-.card {
-  background:#111418; border:1px solid #222833; border-radius:16px;
-  padding:16px 18px; box-shadow:0 8px 24px rgba(0,0,0,.25);
-}
-.card h3 { margin-top: 0; }
-
-/* Bloque código con borde sutil */
-.stCode { border-radius:14px !important; border:1px solid #1f2530; }
-pre code, .stCodeBlock { font-size:13px; line-height:1.45; }
-
-/* Tablas: hover suave */
-.dataframe tbody tr:hover { background: rgba(96,165,250,.08); }
-</style>
-""", unsafe_allow_html=True)
-
-def ui_sql_card(sql: str, *, title="Consulta SQL Generada", chips=None):
-    \"\"\"Tarjeta bonita para mostrar SQL + chips. No reemplaza tu lógica, solo la viste mejor.\"\"\"
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.markdown(f"### 📜 {title}")
-    if chips:
-        st.markdown(" ".join([f"<span class='pill'>{c}</span>" for c in chips]), unsafe_allow_html=True)
-        st.write("")  # separador visual
-    st.code(sql, language="sql")
-    st.markdown("</div>", unsafe_allow_html=True)
-# =======================
-# FIN MEJORA GRÁFICA
-# =======================
-
 # Patrón país usado por los detectores (debe declararse antes de usarse)
 _COUNTRY_REGEX = r"\b(chile|per[uú]|bolivia|pa[ií]s(?:es)?)\b"
 
@@ -104,7 +59,7 @@ def _anotar_tipo_en_pregunta(pregunta: str) -> str:
         return pregunta
 
     guia = (f" (Filtrar con DESC_TIPO LIKE '%{t}%'. Considerar UNIDADES > 0 al hablar de ventas.)")
-    if re.search(r"(más\\s+vendid[oa]|mas\\s+vendid[oa]|top|ranking|mejor\\s+vendid[oa])", original, re.I):
+    if re.search(r"(más\s+vendid[oa]|mas\s+vendid[oa]|top|ranking|mejor\s+vendid[oa])", original, re.I):
         guia += (" Mostrar y agrupar por DESC_ARTICULO (no por DESC_TIPO), "
                  "ordenar por SUM(UNIDADES) DESC y usar LIMIT 1 si procede.")
     return pregunta.strip() + guia   
@@ -140,7 +95,7 @@ def es_centro_distribucion(nombre: str) -> bool:
 def forzar_distinct_pais_si_corresponde(pregunta, sql_generado):
     if re.search(r'\bpa[ií]s\b', pregunta, re.I) and \
        st.session_state.get("__last_ref_replacement__") in ("DESC_TIENDA", "DESC_TIENDA_LIST"):
-        if not re.search(r'\bselect\\s+distinct\b', sql_generado, re.I):
+        if not re.search(r'\bselect\s+distinct\b', sql_generado, re.I):
             return f"SELECT DISTINCT PAIS FROM ({sql_generado}) AS t"
     return sql_generado
     
@@ -234,17 +189,17 @@ def _to_yyyymmdd(v) -> str:
 _LOCAL_CURRENCY_BY_SOC = {"1000": "CLP", "2000": "PEN", "3000": "BOB"}
 _SOC_BY_NAME = {"chile": "1000", "perú": "2000", "peru": "2000", "bolivia": "3000"}
 def _solo_conteo_o_listado_de_paises(texto: str) -> bool:
-    patrones = r"(cu[aá]nt[oa]s?\\s+pa[ií]ses|n[uú]mero\\s+de\\s+pa[ií]ses|cantidad\\s+de\\s+pa[ií]ses|" \
-               r"(listar|mostrar|muestr[ao])\\s+(los\\s+)?pa[ií]ses|qu[eé]\\s+pa[ií]ses\\b)"
+    patrones = r"(cu[aá]nt[oa]s?\s+pa[ií]ses|n[uú]mero\s+de\s+pa[ií]ses|cantidad\s+de\s+pa[ií]ses|" \
+               r"(listar|mostrar|muestr[ao])\s+(los\s+)?pa[ií]ses|qu[eé]\s+pa[ií]ses\b)"
     return bool(re.search(patrones, texto, re.I))
 
 def _extraer_paises(texto: str) -> set[str]:
     """Set de SOCIEDAD_CO presentes explícitamente en el texto (por nombre o código)."""
     codes = set()
     for k, v in _SOC_BY_NAME.items():
-        if re.search(rf"\\b{k}\\b", texto, re.I):
+        if re.search(rf"\b{k}\b", texto, re.I):
             codes.add(v)
-    for m in re.findall(r"\\b(1000|2000|3000)\\b", texto):
+    for m in re.findall(r"\b(1000|2000|3000)\b", texto):
         codes.add(m)
     return codes
 
@@ -258,7 +213,7 @@ def _sugerir_monedas(paises: set[str], es_agrupado_por_pais: bool) -> list[str]:
 
 # --- Moneda: detectar en el texto (agrega PEN/BOB)
 def _tiene_moneda(texto: str) -> bool:
-    return bool(re.search(r"\\b(usd|clp|pen|bob|d[oó]lar(?:es)?|pesos?)\\b", texto, re.I))
+    return bool(re.search(r"\b(usd|clp|pen|bob|d[oó]lar(?:es)?|pesos?)\b", texto, re.I))
 
 # Ejecutar y mostrar IP saliente (útil para Remote MySQL en cPanel)
 ip_actual = obtener_ip_publica()
@@ -328,11 +283,11 @@ def connect_db():
         )
     except mysql.connector.Error as e:
         st.error(
-            "❌ No se pudo conectar a MySQL.\\n\\n"
+            "❌ No se pudo conectar a MySQL.\n\n"
             "Posibles causas: servidor caído, tu IP no está autorizada en cPanel → Remote MySQL, "
-            "o límite de conexiones.\\n\\n"
+            "o límite de conexiones.\n\n"
             f"Detalle técnico: {e}"
-            + (f"\\n\\nIP detectada: {ip_actual}" if ip_actual else "")
+            + (f"\n\nIP detectada: {ip_actual}" if ip_actual else "")
         )
         return None
 
@@ -346,7 +301,7 @@ def es_consulta_segura(sql):
 
 sql_prompt = PromptTemplate(
     input_variables=["pregunta"],
-    template=\"\"\"
+    template="""
 1. Si el usuario menciona términos como "tienda", "cliente", "marca", "canal", "producto", "temporada", "calidad", etc., asume que se refiere a su campo descriptivo (DESC_...) y **no al código (COD_...)**, excepto que el usuario especifique explícitamente “código de...”.
 
    - Ejemplo: "tienda" → DESC_TIENDA
@@ -444,7 +399,7 @@ Packing Bags, Pants, Patches, Pines, Shirts, Sin Tipo, Sweaters, Sweatshirts, Ta
 🖍️ Cuando generes la consulta SQL, no expliques la respuesta —solo entrega el SQL limpio y optimizado para MySQL.
 
 Pregunta: {pregunta}
-\"\"\"
+"""
 )
 
 referencias = {
@@ -498,7 +453,7 @@ def aplicar_contexto(pregunta: str) -> str:
         lista_sql = "', '".join(s.replace("'", "''") for s in lista)
         # Anotación guía para el generador SQL
         guia_in = f" (Filtrar con DESC_TIENDA IN ('{lista_sql}'))"
-        pregunta_mod = re.sub(r"(esas|estas)\\s+tiendas", "las tiendas indicadas", pregunta_mod, flags=re.I)
+        pregunta_mod = re.sub(r"(esas|estas)\s+tiendas", "las tiendas indicadas", pregunta_mod, flags=re.I)
         pregunta_mod += guia_in
         # marca que el reemplazo fue por tiendas (para saltarse aclaraciones)
         st.session_state["__last_ref_replacement__"] = "DESC_TIENDA_LIST"
@@ -575,10 +530,10 @@ def forzar_distinct_canal_si_corresponde(pregunta, sql_generado):
     Si la pregunta pide el pais de una tienda (ej: '¿de qué pais es esa tienda?'),
     envuelve el SQL en un SELECT DISTINCT para evitar filas duplicadas.
     """
-    if re.search(r'\\bcanal(es)?\\b', pregunta, flags=re.IGNORECASE) and \
-       re.search(r'\\btienda\\b|esa tienda', pregunta, flags=re.IGNORECASE):
+    if re.search(r'\bcanal(es)?\b', pregunta, flags=re.IGNORECASE) and \
+       re.search(r'\btienda\b|esa tienda', pregunta, flags=re.IGNORECASE):
         # Evitar doble DISTINCT si ya viene correcto
-        if not re.search(r'\\bselect\\s+distinct\\b', sql_generado, flags=re.IGNORECASE):
+        if not re.search(r'\bselect\s+distinct\b', sql_generado, flags=re.IGNORECASE):
             return f"SELECT DISTINCT DESC_CANAL FROM ({sql_generado}) AS t"
     return sql_generado
 
@@ -654,7 +609,7 @@ from typing import Optional, Tuple
 # Palabras que delatan montos:
 _MONEY_KEYS = (
     r"(venta|vende|ventas|ingreso|ingresos|margen|utilidad|gm|revenue|sales|facturaci[oó]n|"
-    r"precio|precios|car[oa]s?|barat[oa]s?|cost[eo]s?|ticket\\s*promedio|valor(?:es)?)"
+    r"precio|precios|car[oa]s?|barat[oa]s?|cost[eo]s?|ticket\s*promedio|valor(?:es)?)"
 )
     # Palabras que delatan pais:
 # --- País: detectores ----------------------------------------
@@ -666,18 +621,18 @@ def _habla_de_pais(texto: str) -> bool:
 
 def _tiene_pais(texto: str) -> bool:
     # ¿viene un país explícito (por nombre o código SOCIEDAD_CO)?
-    return bool(re.search(r"\\b(1000|2000|3000|chile|per[uú]|bolivia)\\b", texto, re.I))
+    return bool(re.search(r"\b(1000|2000|3000|chile|per[uú]|bolivia)\b", texto, re.I))
 
 def _agregacion_por_pais(texto: str) -> bool:
     # intenciones de ranking/agrupación/comparación por país
     patrones = (
-        r"(por\\s+pa[ií]s|seg[uú]n\\s+pa[ií]s|ranking\\s+de\\s+pa[ií]ses|"
-        r"top\\s+\\d+\\s+pa[ií]ses|comparaci[oó]n\\s+por\\s+pa[ií]s|"
-        r"cu[aá]l(?:es)?\\s+es\\s+el\\s+pa[ií]s\\s+que\\s+(?:m[aá]s|menos))"
+        r"(por\s+pa[ií]s|seg[uú]n\s+pa[ií]s|ranking\s+de\s+pa[ií]ses|"
+        r"top\s+\d+\s+pa[ií]ses|comparaci[oó]n\s+por\s+pa[ií]s|"
+        r"cu[aá]l(?:es)?\s+es\s+el\s+pa[ií]s\s+que\s+(?:m[aá]s|menos))"
     )
     return bool(re.search(patrones, texto, re.I))
 # Palabras que delatan fechas explícitas:
-_DATE_KEYS = r"(hoy|ayer|semana|mes|año|anio|últim|ultimo|desde|hasta|entre|rango|202\\d|20\\d\\d|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)"
+_DATE_KEYS = r"(hoy|ayer|semana|mes|año|anio|últim|ultimo|desde|hasta|entre|rango|202\d|20\d\d|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)"
 
 
 
@@ -686,7 +641,7 @@ _PAIS_MAP = {"chile": "1000", "peru": "2000", "perú": "2000", "bolivia": "3000"
 
 def _extraer_pais(texto: str):
     """Devuelve (codigo, etiqueta) si aparece un país en el texto, si no (None, None)."""
-    m = re.search(r"\\b(chile|per[uú]|bolivia)\\b", texto, re.I)
+    m = re.search(r"\b(chile|per[uú]|bolivia)\b", texto, re.I)
     if not m:
         return None, None
     p = m.group(1).lower()
@@ -701,18 +656,18 @@ def _tiene_fecha(texto: str) -> bool:
     return bool(re.search(_DATE_KEYS, texto, re.I))
 
 def _habla_de_tienda(texto: str) -> bool:
-    return bool(re.search(r"\\btienda(s)?\\b", texto, re.I))
+    return bool(re.search(r"\btienda(s)?\b", texto, re.I))
 
 
 def _menciona_cd(texto: str) -> bool:
     # si el usuario ya dijo explícitamente CD o ese nombre, no preguntamos
     return bool(
-        re.search(r"centro\\s+de\\s+distribuci[oó]n", texto, re.I)
-        or re.search(r"\\bcentro\\s+distribucion\\b", texto, re.I)
-        or re.search(r"\\bCD\\b", texto, re.I)
+        re.search(r"centro\s+de\s+distribuci[oó]n", texto, re.I)
+        or re.search(r"\bcentro\s+distribucion\b", texto, re.I)
+        or re.search(r"\bCD\b", texto, re.I)
     )
 # --- País: detectores (definir una sola vez) -----------------
-_COUNTRY_REGEX = r"\\b(chile|per[uú]|bolivia|pa[ií]s(?:es)?)\\b"
+_COUNTRY_REGEX = r"\b(chile|per[uú]|bolivia|pa[ií]s(?:es)?)\b"
 
 def _habla_de_pais(texto: str) -> bool:
     # ¿se menciona la noción de país en general?
@@ -720,22 +675,22 @@ def _habla_de_pais(texto: str) -> bool:
 
 def _tiene_pais(texto: str) -> bool:
     # ¿hay un país explícito por nombre o por código SOCIEDAD_CO?
-    return bool(re.search(r"\\b(1000|2000|3000|chile|per[uú]|bolivia)\\b", texto, re.I))
+    return bool(re.search(r"\b(1000|2000|3000|chile|per[uú]|bolivia)\b", texto, re.I))
 
 def _agregacion_por_pais(texto: str) -> bool:
     # intenciones de ranking/agrupación/comparación por país
     patrones = (
-        r"(por\\s+pa[ií]s|seg[uú]n\\s+pa[ií]s|ranking\\s+de\\s+pa[ií]ses|"
-        r"top\\s+\\d+\\s+pa[ií]ses|comparaci[oó]n\\s+por\\s+pa[ií]s|"
-        r"cu[aá]l(?:es)?\\s+es\\s+el\\s+pa[ií]s\\s+que\\s+(?:m[aá]s|menos)|"
-        r"en\\s+qu[eé]\\s+pa[ií]s\\s+se\\s+vend(?:e|i[óo]a)|"   # se vende / se vendió / se vendía
-        r"en\\s+qu[eé]\\s+pa[ií]s\\s+se\\s+vende\\s+(?:m[aá]s|menos))"
+        r"(por\s+pa[ií]s|seg[uú]n\s+pa[ií]s|ranking\s+de\s+pa[ií]ses|"
+        r"top\s+\d+\s+pa[ií]ses|comparaci[oó]n\s+por\s+pa[ií]s|"
+        r"cu[aá]l(?:es)?\s+es\s+el\s+pa[ií]s\s+que\s+(?:m[aá]s|menos)|"
+        r"en\s+qu[eé]\s+pa[ií]s\s+se\s+vend(?:e|i[óo]a)|"   # se vende / se vendió / se vendía
+        r"en\s+qu[eé]\s+pa[ií]s\s+se\s+vende\s+(?:m[aá]s|menos))"
     )
     return bool(re.search(patrones, texto, re.I))
 
 def _extraer_pais(texto: str):
     """Devuelve (codigo, etiqueta) si aparece un país en el texto; si no, (None, None)."""
-    m = re.search(r"\\b(chile|per[uú]|bolivia)\\b", texto, re.I)
+    m = re.search(r"\b(chile|per[uú]|bolivia)\b", texto, re.I)
     if not m:
         return None, None
     p = m.group(1).lower()
@@ -805,9 +760,9 @@ _SOC_BY_NAME = {"chile": "1000", "perú": "2000", "peru": "2000", "bolivia": "30
 def _extraer_paises(texto: str) -> set[str]:
     codes = set()
     for k, v in _SOC_BY_NAME.items():
-        if re.search(rf"\\b{k}\\b", texto, re.I):
+        if re.search(rf"\b{k}\b", texto, re.I):
             codes.add(v)
-    for m in re.findall(r"\\b(1000|2000|3000)\\b", texto):
+    for m in re.findall(r"\b(1000|2000|3000)\b", texto):
         codes.add(m)
     return codes
 
@@ -819,7 +774,7 @@ def _sugerir_monedas(paises: set[str], es_agrupado_por_pais: bool) -> list[str]:
 
 def _tiene_moneda(texto: str) -> bool:
     # Detecta USD/CLP/PEN/BOB
-    return bool(re.search(r"\\b(usd|clp|pen|bob|d[oó]lar(?:es)?|pesos?)\\b", texto, re.I))
+    return bool(re.search(r"\b(usd|clp|pen|bob|d[oó]lar(?:es)?|pesos?)\b", texto, re.I))
 
 
 def manejar_aclaracion(pregunta: str) -> Optional[str]:
@@ -968,11 +923,11 @@ if pregunta:
         st.info("🔁 Consulta reutilizada desde la cache.")
     else:
         # 2) Derivar género
-        if re.search(r'\\b(mujer|femenin[oa])\\b', pregunta, flags=re.IGNORECASE):
+        if re.search(r'\b(mujer|femenin[oa])\b', pregunta, flags=re.IGNORECASE):
             st.session_state["contexto"]["DESC_GENERO"] = "Woman"
-        elif re.search(r'\\b(hombre|masculin[oa]|varón|varon|caballero)\\b', pregunta, flags=re.IGNORECASE):
+        elif re.search(r'\b(hombre|masculin[oa]|varón|varon|caballero)\b', pregunta, flags=re.IGNORECASE):
             st.session_state["contexto"]["DESC_GENERO"] = "Men"
-        elif re.search(r'\\bunisex\\b', pregunta, flags=re.IGNORECASE):
+        elif re.search(r'\bunisex\b', pregunta, flags=re.IGNORECASE):
             st.session_state["contexto"]["DESC_GENERO"] = "Unisex"
 
         # 3) Aplicar contexto y guía de TIPO  ⬇⬇⬇ TODO este bloque re-indentar aquí
@@ -1084,40 +1039,14 @@ if sql_query:
 # UI MEJORADA EN STREAMLIT
 # (Esta parte va justo al final del archivo app.py, reemplazando el bloque de visualización actual de interacciones)
 
-# 👉 Construimos chips justo antes de mostrar la SQL actual (usamos pregunta_con_contexto si existe)
-chips = []
-_ctx_text = locals().get("pregunta_con_contexto", pregunta) or ""
-
-mon_last = st.session_state.get("clarif_moneda_last")
-if isinstance(mon_last, list) and mon_last:
-    chips.append(f"Moneda: {', '.join(mon_last)}")
-elif isinstance(mon_last, str) and mon_last:
-    chips.append(f"Moneda: {mon_last}")
-
-m = re.search(r"FECHA_DOCUMENTO entre (\\d{8}) y (\\d{8})", _ctx_text, re.I)
-if m:
-    chips.append(f"Rango: {m.group(1)} → {m.group(2)}")
-
-if "excluyendo el Centro de Distribución" in _ctx_text:
-    chips.append("CDs excluidos")
-elif "incluyendo el Centro de Distribución" in _ctx_text:
-    chips.append("CDs incluidos")
-
-if "clarif_pais_label" in st.session_state:
-    chips.append(f"País: {st.session_state['clarif_pais_label']}")
-
-tiendas_list = st.session_state.get("contexto", {}).get("DESC_TIENDA_LIST")
-if isinstance(tiendas_list, list) and tiendas_list:
-    chips.append(f"Tiendas: {len(tiendas_list)} seleccionada(s)")
-
 if pregunta and sql_query is not None:
     with st.chat_message("user"):
         st.markdown(f"### 🤖 Pregunta actual:")
         st.markdown(f"> {pregunta}")
 
     with st.chat_message("assistant"):
-        # 🔁 Reemplazamos solo la presentación de la SQL por una tarjeta con chips (lógica intacta).
-        ui_sql_card(sql_query, chips=chips)
+        st.markdown("### 🔍 Consulta SQL Generada:")
+        st.code(sql_query, language="sql")
         st.markdown("### 💬 Respuesta:")
         st.markdown(resultado)
 
