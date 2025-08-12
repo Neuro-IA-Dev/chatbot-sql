@@ -859,7 +859,7 @@ if pregunta:
             st.session_state["contexto"]["DESC_GENERO"] = "Unisex"
 
     # 3) Aplicar contexto y generar SQL con el LLM
-    pregunta_con_contexto = _anotar_tipo_en_pregunta(pregunta_con_contexto)
+        pregunta_con_contexto = _anotar_tipo_en_pregunta(pregunta_con_contexto)
     
     # Si la pregunta es “meta países” (cuántos/lista/descripción),
     # NO pidas moneda ni país específico; sugiere DOS SELECTs al LLM.
