@@ -152,6 +152,8 @@ sql_prompt = PromptTemplate(
    - Ejemplo: "producto" → DESC_ARTICULO
    - Ejemplo: "código de tienda" → COD_TIENDA
 
+    La columna SOCIEDAD_CO representa al pais 1000 = "Chile", 2000 = "Perú" y 3000 = "Bolivia" siempre que se mencione pais, usa esta regla.
+    
    Cuando el usuario mencione palabras que parecen referirse a nombres de marcas o productos (por ejemplo: "Levis", "Nike", "Adidas", etc.), **búscalas en DESC_MARCA**.
 
    Cuando el usuario mencione nombres de ciudades, centros comerciales u otros lugares (por ejemplo: "Costanera", "Talca", "Plaza Vespucio"), **búscalos en DESC_TIENDA**.
@@ -231,7 +233,9 @@ referencias = {
     "ese sexo": "DESC_GENERO",
     "ese público": "DESC_GENERO",
     "esa categoría de género": "DESC_GENERO",
-    "esa categoria de genero": "DESC_GENERO"
+    "esa categoria de genero": "DESC_GENERO",
+    "ese pais": "SOCIEDAD_CO",
+    "ese país": "SOCIEDAD_CO"
 }
 
 def aplicar_contexto(pregunta):
@@ -244,7 +248,7 @@ def aplicar_contexto(pregunta):
             pregunta_modificada = re.sub(ref, valor_contexto, pregunta_modificada, flags=re.IGNORECASE)
     return pregunta_modificada
 
-campos_contexto = ["DESC_TIENDA", "DESC_CANAL", "DESC_MARCA", "DESC_ARTICULO", "DESC_GENERO", "NOMBRE_CLIENTE"]
+campos_contexto = ["DESC_TIENDA", "DESC_CANAL", "DESC_MARCA", "DESC_ARTICULO", "DESC_GENERO", "NOMBRE_CLIENTE","SOCIEDAD_CO"]
 
 
 def actualizar_contexto(df):
@@ -255,7 +259,8 @@ def actualizar_contexto(df):
         "DESC_MARCA": ["DESC_MARCA", "MARCA", "Marca"],
         "DESC_ARTICULO": ["DESC_ARTICULO", "ARTICULO", "Artículo", "Articulo"],
         "DESC_GENERO": ["DESC_GENERO", "GENERO", "Género", "Genero"],
-        "NOMBRE_CLIENTE": ["NOMBRE_CLIENTE", "CLIENTE", "Cliente"]
+        "NOMBRE_CLIENTE": ["NOMBRE_CLIENTE", "CLIENTE", "Cliente"],
+        "SOCIEDAD_CO": ["PAIS", "PAISES", "Pais","Paises","Países","País"]
     }
 
     for canonico, posibles in alias.items():
@@ -269,6 +274,8 @@ def actualizar_contexto(df):
 def forzar_distinct_canal_si_corresponde(pregunta, sql_generado):
     """
     Si la pregunta pide el canal de una tienda (ej: '¿de qué canal es esa tienda?'),
+    envuelve el SQL en un SELECT DISTINCT para evitar filas duplicadas.
+    Si la pregunta pide el pais de una tienda (ej: '¿de qué pais es esa tienda?'),
     envuelve el SQL en un SELECT DISTINCT para evitar filas duplicadas.
     """
     if re.search(r'\bcanal(es)?\b', pregunta, flags=re.IGNORECASE) and \
@@ -352,13 +359,19 @@ _MONEY_KEYS = (
     r"(venta|vende|ventas|ingreso|ingresos|margen|utilidad|gm|revenue|sales|facturaci[oó]n|"
     r"precio|precios|car[oa]s?|barat[oa]s?|cost[eo]s?|ticket\s*promedio|valor(?:es)?)"
 )
+    # Palabras que delatan pais:
+_COUNTRY_KEYS = (
+    r"(país|pais|países|paises|chile|perú|perú|bolivia|"
+)
 # Palabras que delatan fechas explícitas:
 _DATE_KEYS = r"(hoy|ayer|semana|mes|año|anio|últim|ultimo|desde|hasta|entre|rango|202\d|20\d\d|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)"
 
 def _tiene_moneda(texto: str) -> bool:
     # detecta si el usuario ya dijo CLP/CH$ o USD/dólar
     return bool(re.search(r"\b(clp|ch\$|pesos?)\b", texto, re.I) or re.search(r"\b(usd|d[oó]lares?)\b", texto, re.I))
-
+def _tiene_pais(texto: str) -> bool:
+    # detecta si el usuario ya dijo CLP/CH$ o USD/dólar
+    return bool(re.search(r"\b(Chile|Perú|Bolivia\?)\b", texto, re.I) or re.search(r"\b(usd|d[oó]lares?)\b", texto, re.I))
 def _pide_montos(texto: str) -> bool:
     return bool(re.search(_MONEY_KEYS, texto, re.I))
 
@@ -367,6 +380,8 @@ def _tiene_fecha(texto: str) -> bool:
 
 def _habla_de_tienda(texto: str) -> bool:
     return bool(re.search(r"\btienda(s)?\b", texto, re.I))
+def _habla_de_pais(texto: str) -> bool:
+    return bool(re.search(_COUNTRY_KEYS, texto, re.I))
 
 def _menciona_cd(texto: str) -> bool:
     # si el usuario ya dijo explícitamente CD o ese nombre, no preguntamos
@@ -376,6 +391,7 @@ def _necesita_aclaracion(texto: str) -> dict:
     """Devuelve flags de aclaración requerida."""
     return {
         "moneda": (_pide_montos(texto) and not _tiene_moneda(texto)),
+        "pais": (_habla_de_pais(texto) and not _tiene_pais(texto)),
         "fecha": (not _tiene_fecha(texto)),
         "tienda_vs_cd": (_habla_de_tienda(texto) and not _menciona_cd(texto)),
     }
@@ -415,7 +431,6 @@ def _inyectar_aclaraciones_en_pregunta(pregunta: str, moneda, rango, excluir_cd)
     return " ".join(partes).strip()
 
 
-# UI de aclaración (usa st.session_state para ciclar hasta que el usuario confirme)
 # UI de aclaración (usa st.session_state para ciclar hasta que el usuario confirme)
 def manejar_aclaracion(pregunta: str) -> Optional[str]:
     """Si requiere aclaración, muestra UI y devuelve una 'pregunta enriquecida' al confirmar.
