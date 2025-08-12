@@ -428,14 +428,16 @@ referencias.update({
 })
 
 def aplicar_contexto(pregunta):
+    # ⬅️ evita AttributeError si llega None o vacío
+    if not isinstance(pregunta, str) or not pregunta.strip():
+        return pregunta
     pregunta_modificada = pregunta
     for ref, campo in referencias.items():
         if ref.lower() in pregunta.lower() and campo in st.session_state["contexto"]:
-            # Escapar cualquier carácter especial del valor recordado (comillas, +, ?, etc.)
             valor_contexto = re.escape(st.session_state["contexto"][campo])
-            # Reemplazo case-insensitive SOLO del texto de referencia (esa tienda, ese canal, etc.)
             pregunta_modificada = re.sub(ref, valor_contexto, pregunta_modificada, flags=re.IGNORECASE)
     return pregunta_modificada
+
 
 campos_contexto = [
     "DESC_TIENDA","DESC_CANAL","DESC_MARCA","DESC_ARTICULO",
@@ -851,6 +853,7 @@ if pregunta:
         # Reemplaza y limpia
         pregunta = pregunta_clara
         st.session_state["pending_question"] = pregunta  # opcional: mantén enriquecida
+
     with st.chat_message("user"):
         st.markdown(pregunta)
 
@@ -868,31 +871,30 @@ if pregunta:
         elif re.search(r'\bunisex\b', pregunta, flags=re.IGNORECASE):
             st.session_state["contexto"]["DESC_GENERO"] = "Unisex"
 
-# 3) Aplicar contexto y generar SQL con el LLM
-pregunta_con_contexto = aplicar_contexto(pregunta)
-# Si detectamos un valor conocido de DESC_TIPO (Pines, Jackets, etc.), añadimos la guía
-pregunta_con_contexto = _anotar_tipo_en_pregunta(pregunta_con_contexto)
+        # 3) Aplicar contexto y generar SQL con el LLM
+        pregunta_con_contexto = aplicar_contexto(pregunta)
+        # Si detectamos un valor conocido de DESC_TIPO (Pines, Jackets, etc.), añadimos la guía
+        pregunta_con_contexto = _anotar_tipo_en_pregunta(pregunta_con_contexto)
 
-# Si la pregunta es “meta países” (cuántos/lista/descripción) NO pidas moneda/país y sugiere dos SELECTs
-if _solo_conteo_o_listado_de_paises(pregunta_con_contexto):
-    pregunta_con_contexto += (
-        " Nota: Si la pregunta es 'cuántos países hay' o 'lista/descripcion de países', "
-        "no filtres por MONEDA y devuelve DOS SELECTs: "
-        "(1) SELECT COUNT(DISTINCT SOCIEDAD_CO) AS TOTAL_PAISES FROM VENTAS; "
-        "(2) SELECT DISTINCT CASE SOCIEDAD_CO WHEN '1000' THEN 'Chile' "
-        "WHEN '2000' THEN 'Perú' WHEN '3000' THEN 'Bolivia' END AS PAIS FROM VENTAS;"
-    )
+        # Si la pregunta es “meta países” (cuántos/lista/descripción) NO pidas moneda/país y sugiere dos SELECTs
+        if _solo_conteo_o_listado_de_paises(pregunta_con_contexto):
+            pregunta_con_contexto += (
+                " Nota: Si la pregunta es 'cuántos países hay' o 'lista/descripcion de países', "
+                "no filtres por MONEDA y devuelve DOS SELECTs: "
+                "(1) SELECT COUNT(DISTINCT SOCIEDAD_CO) AS TOTAL_PAISES FROM VENTAS; "
+                "(2) SELECT DISTINCT CASE SOCIEDAD_CO WHEN '1000' THEN 'Chile' "
+                "WHEN '2000' THEN 'Perú' WHEN '3000' THEN 'Bolivia' END AS PAIS FROM VENTAS;"
+            )
 
-prompt_text = sql_prompt.format(pregunta=pregunta_con_contexto)
-sql_query = llm.predict(prompt_text).replace("```sql", "").replace("```", "").strip()
+        prompt_text = sql_prompt.format(pregunta=pregunta_con_contexto)
+        sql_query = llm.predict(prompt_text).replace("```sql", "").replace("```", "").strip()
 
-# 4) Forzar DISTINCT si corresponde
-sql_query = forzar_distinct_canal_si_corresponde(pregunta_con_contexto, sql_query)
+        # 4) Forzar DISTINCT si corresponde
+        sql_query = forzar_distinct_canal_si_corresponde(pregunta_con_contexto, sql_query)
 
-# 5) Preparar guardado en cache
-embedding = obtener_embedding(pregunta)
-guardar_en_cache_pending = embedding if embedding else None
-
+        # 5) Preparar guardado en cache
+        embedding = obtener_embedding(pregunta)
+        guardar_en_cache_pending = embedding if embedding else None
 
 
 # 6) Ejecutar SQL (soporta múltiples SELECT separados por ';') — SOLO si hay SQL
