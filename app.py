@@ -669,31 +669,6 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
         if flags["fecha"] and (d is None or h is None):
             st.warning("Falta completar el rango de fechas.")
             st.stop()
-
-        rango = (d, h) if flags["fecha"] else None
-        excluir_cd = st.session_state.get("clarif_excluir_cd") if flags["tienda_vs_cd"] else None
-        pais_code_ui = st.session_state.get("clarif_pais_code") if flags.get("pais") else None
-        pais_label_ui = st.session_state.get("clarif_pais_label") if flags.get("pais") else None
-
-        moneda_txt = ", ".join(moneda_sel) if isinstance(moneda_sel, (list, tuple, set)) else moneda_sel
-        pregunta_enriquecida = _inyectar_aclaraciones_en_pregunta(pregunta, moneda_txt, rango, excluir_cd)
-
-        if pais_code_ui and pais_label_ui:
-            pregunta_enriquecida += f" para {pais_label_ui} (SOCIEDAD_CO={pais_code_ui})"
-
-        # Guardamos la última(s) moneda(s) para formateo de resultados
-        st.session_state["clarif_moneda_last"] = moneda_sel
-
-        # Limpieza
-        for k in ["clarif_moneda","clarif_fecha_desde","clarif_fecha_hasta",
-                  "clarif_excluir_cd","clarif_pais_code","clarif_pais_label"]:
-            st.session_state.pop(k, None)
-
-        return pregunta_enriquecida
-
-    st.stop()
-
-
     # -------------------- País (tu lógica existente de país explícito)
     pais_code, pais_label = _extraer_pais(pregunta)
     if flags.get("pais"):
