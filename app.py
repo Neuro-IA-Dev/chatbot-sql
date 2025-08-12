@@ -114,9 +114,11 @@ def connect_db():
 
 
 def es_consulta_segura(sql):
-    sql = sql.lower()
+    if not sql or not isinstance(sql, str):
+        return False
+    sql_l = sql.lower()
     comandos_peligrosos = ["drop", "delete", "truncate", "alter", "update", "insert", "--", "/*", "grant", "revoke"]
-    return not any(comando in sql for comando in comandos_peligrosos)
+    return not any(c in sql_l for c in comandos_peligrosos)
 
 sql_prompt = PromptTemplate(
     input_variables=["pregunta"],
@@ -412,17 +414,20 @@ try:
                 # suma de filas de todos los resultados mostrados (opcional)
                 total_filas = sum(len(df_sub) for df_sub in [] if df_sub is not None)
                 resultado = f"Se mostraron {dfs_mostrados} resultado(s)."
-except Exception as e:
-    resultado = f"❌ Error ejecutando SQL: {e}"
+    except Exception as e:
+        resultado = f"❌ Error ejecutando SQL: {e}"
+
+    # ✅ 7) Guardar conversación SOLO si hay datos válidos
+    if sql_query:
+        st.session_state["conversacion"].append({
+            "pregunta": pregunta,
+            "respuesta": resultado,
+            "sql": sql_query,
+            "cache": guardar_en_cache_pending
+        })
 
 
-    # 7) Guardar conversación
-    st.session_state["conversacion"].append({
-        "pregunta": pregunta,
-        "respuesta": resultado,
-        "sql": sql_query,
-        "cache": guardar_en_cache_pending
-    })
+
 
 # MOSTRAR TODAS LAS INTERACCIONES COMO CHAT
 # UI MEJORADA EN STREAMLIT
@@ -453,47 +458,59 @@ if pregunta and sql_query is not None:
 
     st.markdown("---")
 
-# MOSTRAR HISTORIAL PREVIO (EXCLUYENDO LA Última PREGUNTA)
+# MOSTRAR HISTORIAL PREVIO (EXCLUYENDO LA ÚLTIMA PREGUNTA)
 if st.session_state["conversacion"]:
     st.markdown("## ⌛ Historial de preguntas anteriores")
+
+    # Limpia entradas viejas que hayan quedado sin pregunta o sin sql
+    st.session_state["conversacion"] = [
+        it for it in st.session_state["conversacion"]
+        if it and it.get("pregunta") and it.get("sql")
+    ]
+
     for i, item in enumerate(reversed(st.session_state["conversacion"][:-1])):
-        with st.expander(f"💬 {item['pregunta']}", expanded=False):
+        pregunta_hist = item.get("pregunta", "—")
+        sql_hist = item.get("sql")
+
+        if not sql_hist:
+            # Si por algún motivo sigue sin SQL, sáltalo
+            continue
+
+        with st.expander(f"💬 {pregunta_hist}", expanded=False):
             st.markdown("**Consulta SQL Generada:**")
-            st.code(item["sql"], language="sql")
+            st.code(sql_hist, language="sql")
 
             st.markdown("**📊 Resultado:**")
             try:
-                # Intentar volver a ejecutar la consulta para mostrar los resultados
-                if es_consulta_segura(item["sql"]):
+                if es_consulta_segura(sql_hist):
                     conn = connect_db()
-                    cursor = conn.cursor()
-                    cursor.execute(item["sql"])
-                    rows = cursor.fetchall()
-                    if cursor.description:
-                        columns = [col[0] for col in cursor.description]
-                        df_hist = pd.DataFrame(rows, columns=columns)
-                        if "FECHA_DOCUMENTO" in df_hist.columns:
-                            df_hist["FECHA_DOCUMENTO"] = pd.to_datetime(df_hist["FECHA_DOCUMENTO"].astype(str), errors="coerce", format="%Y%m%d").dt.strftime("%d/%m/%Y")
-                        st.dataframe(df_hist, hide_index=True)
-
-                        # ↓↓↓ Descargar Excel para historial (bien indentado)
-                        try:
-                            xlsx_hist = make_excel_download_bytes(df_hist, sheet_name="Historial")
-                            st.download_button(
-                                label="⬇️ Descargar en Excel",
-                                data=xlsx_hist,
-                                file_name=f"resultado_hist_{i}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                key=f"dl_hist_{i}"
-                            )
-                        except Exception as e:
-                            st.warning(f"No se pudo generar el Excel: {e}")
-
-
+                    if conn is None:
+                        st.warning("Sin conexión a MySQL para recrear el resultado.")
                     else:
-                        st.markdown("*Sin resultados para esta consulta.*")
-                    cursor.close()
-                    conn.close()
+                        # Soporta múltiples SELECT separados por ';'
+                        for idx, q in enumerate(split_queries(sql_hist), start=1):
+                            if not es_consulta_segura(q):
+                                st.warning(f"⚠️ Subconsulta {idx} bloqueada por seguridad.")
+                                continue
+
+                            df_hist = ejecutar_select(conn, q)
+                            if df_hist is not None:
+                                st.subheader(f"Resultado {idx}")
+                                st.dataframe(df_hist, hide_index=True, use_container_width=True)
+
+                                # Descarga a Excel por resultado
+                                try:
+                                    xlsx_hist = make_excel_download_bytes(df_hist, sheet_name=f"Historial_{idx}")
+                                    st.download_button(
+                                        label="⬇️ Descargar en Excel",
+                                        data=xlsx_hist,
+                                        file_name=f"resultado_hist_{i}_{idx}.xlsx",
+                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                        key=f"dl_hist_{i}_{idx}"
+                                    )
+                                except Exception as e:
+                                    st.warning(f"No se pudo generar el Excel: {e}")
+                        conn.close()
                 else:
                     st.warning("⚠️ Consulta peligrosa. No se vuelve a ejecutar por seguridad.")
             except Exception as e:
