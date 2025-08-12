@@ -150,7 +150,7 @@ referencias = {
     "ese genero": "DESC_GENERO",
     "ese sexo": "DESC_GENERO",
     "ese público": "DESC_GENERO",
-    "esa categoría de género": "DESC_GENERO"
+    "esa categoría de género": "DESC_GENERO",
     "esa categoria de genero": "DESC_GENERO"
 }
 
@@ -269,8 +269,8 @@ if pregunta:
     guardar_en_cache_pending = None
 
     if sql_query:
-        st.info("🔁 Consulta reutilizada desde la cache.")
-    else:
+    st.info("🔁 Consulta reutilizada desde la cache.")
+else:
     # Derivar género desde la pregunta si aparece explícito (mejora de contexto)
     if re.search(r'\b(mujer|femenin[oa])\b', pregunta, flags=re.IGNORECASE):
         st.session_state["contexto"]["DESC_GENERO"] = "Woman"
@@ -278,6 +278,7 @@ if pregunta:
         st.session_state["contexto"]["DESC_GENERO"] = "Men"
     elif re.search(r'\bunisex\b', pregunta, flags=re.IGNORECASE):
         st.session_state["contexto"]["DESC_GENERO"] = "Unisex"
+
     pregunta_con_contexto = aplicar_contexto(pregunta)
     prompt_text = sql_prompt.format(pregunta=pregunta_con_contexto)
     sql_query = llm.predict(prompt_text).replace("```sql", "").replace("```", "").strip()
