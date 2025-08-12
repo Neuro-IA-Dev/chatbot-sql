@@ -384,13 +384,8 @@ try:
                     st.subheader(f"Resultado {idx}")
                     st.dataframe(df_sub, use_container_width=True)
 
-                    # Botón de descarga (Excel o CSV, según tu helper)
+                    # Botón de descarga a Excel por resultado
                     try:
-                        # si usas la versión con autodetección:
-                        # data, fname, mime = make_table_download(df_sub, base_name=f"resultado_{idx}")
-                        # st.download_button("⬇️ Descargar", data=data, file_name=fname, mime=mime, key=f"dl_{idx}")
-
-                        # si usas make_excel_download_bytes:
                         xlsx_bytes = make_excel_download_bytes(df_sub, sheet_name=f"Resultado_{idx}")
                         st.download_button(
                             label="⬇️ Descargar en Excel",
@@ -411,20 +406,19 @@ try:
             if dfs_mostrados == 0:
                 resultado = "Consulta ejecutada sin resultados tabulares."
             else:
-                # suma de filas de todos los resultados mostrados (opcional)
-                total_filas = sum(len(df_sub) for df_sub in [] if df_sub is not None)
                 resultado = f"Se mostraron {dfs_mostrados} resultado(s)."
-    except Exception as e:
-        resultado = f"❌ Error ejecutando SQL: {e}"
 
-    # ✅ 7) Guardar conversación SOLO si hay datos válidos
-    if sql_query:
-        st.session_state["conversacion"].append({
-            "pregunta": pregunta,
-            "respuesta": resultado,
-            "sql": sql_query,
-            "cache": guardar_en_cache_pending
-        })
+except Exception as e:
+    resultado = f"❌ Error ejecutando SQL: {e}"
+
+# ✅ 7) Guardar conversación SOLO si hay datos válidos
+if sql_query:
+    st.session_state["conversacion"].append({
+        "pregunta": pregunta,
+        "respuesta": resultado,
+        "sql": sql_query,
+        "cache": guardar_en_cache_pending
+    })
 
 
 
