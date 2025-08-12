@@ -138,6 +138,7 @@ Pregunta: {pregunta}
 
 referencias = {
     "esa tienda": "DESC_TIENDA",
+    "esta tienda": "DESC_TIENDA",
     "ese canal": "DESC_CANAL",
     "esa marca": "DESC_MARCA",
     "ese producto": "DESC_ARTICULO",
