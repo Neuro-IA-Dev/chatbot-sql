@@ -782,18 +782,23 @@ if pregunta:
         elif re.search(r'\bunisex\b', pregunta, flags=re.IGNORECASE):
             st.session_state["contexto"]["DESC_GENERO"] = "Unisex"
 
-        # 3) Aplicar contexto y generar SQL con el LLM
-        pregunta_con_contexto = aplicar_contexto(pregunta)
-        # Si la pregunta es meta sobre países (conteo/listado/descripción),
-# no pidas moneda ni un país específico y sugiere DOS SELECTs al LLM.
+       # 3) Aplicar contexto y generar SQL con el LLM
+pregunta_con_contexto = aplicar_contexto(pregunta)
+
+# Si la pregunta es meta sobre países (conteo/listado/descripcion),
+# NO pidas moneda ni un país específico y sugiere DOS SELECTs al LLM.
 if _solo_conteo_o_listado_de_paises(pregunta_con_contexto):
     pregunta_con_contexto += (
         " Nota: Si la pregunta es 'cuántos países hay' o 'lista/descripcion de países', "
         "no filtres por MONEDA y devuelve DOS SELECTs: "
-        "(1) conteo de países distintos; "
-        "(2) listado DISTINCT del CASE SOCIEDAD_CO->nombre de país.")
-        prompt_text = sql_prompt.format(pregunta=pregunta_con_contexto)
-        sql_query = llm.predict(prompt_text).replace("```sql", "").replace("```", "").strip()
+        "(1) SELECT COUNT(DISTINCT SOCIEDAD_CO) AS TOTAL_PAISES FROM VENTAS; "
+        "(2) SELECT DISTINCT CASE SOCIEDAD_CO WHEN '1000' THEN 'Chile' "
+        "WHEN '2000' THEN 'Perú' WHEN '3000' THEN 'Bolivia' END AS PAIS FROM VENTAS;"
+    )
+
+prompt_text = sql_prompt.format(pregunta=pregunta_con_contexto)
+sql_query = llm.predict(prompt_text).replace("```sql", "").replace("```", "").strip()
+
 
         # 4) Forzar DISTINCT si corresponde
         sql_query = forzar_distinct_canal_si_corresponde(pregunta_con_contexto, sql_query)
