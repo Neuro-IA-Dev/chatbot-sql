@@ -47,24 +47,21 @@ def split_queries(sql_text: str) -> list[str]:
     return [q.strip() for q in sql_text.strip().split(";") if q.strip()]
 
 def ejecutar_select(conn, query: str) -> pd.DataFrame | None:
-    """Ejecuta un SELECT y devuelve DataFrame; para no-SELECT devuelve None."""
-    cur = conn.cursor()
-    cur.execute(query)
-    if query.lower().lstrip().startswith("select"):
-        rows = cur.fetchall()
-        cols = [c[0] for c in cur.description] if cur.description else []
-        df = pd.DataFrame(rows, columns=cols)
-        # Formato de fecha si aplica
-        if "FECHA_DOCUMENTO" in df.columns:
-            df["FECHA_DOCUMENTO"] = pd.to_datetime(
-                df["FECHA_DOCUMENTO"].astype(str), format="%Y%m%d", errors="coerce"
-            ).dt.strftime("%d/%m/%Y")
-        cur.close()
-        return df
-    else:
+    q = query.strip()
+    if not q.lower().startswith("select"):
+        cur = conn.cursor(buffered=True)  # evita unread result también aquí
+        cur.execute(q)
         conn.commit()
-    cur.close()
-    return None
+        cur.close()
+        return None
+
+    # SELECT: pandas consume todo → sin Unread result found
+    df = pd.read_sql_query(q, conn)
+    if "FECHA_DOCUMENTO" in df.columns:
+        df["FECHA_DOCUMENTO"] = pd.to_datetime(
+            df["FECHA_DOCUMENTO"].astype(str), format="%Y%m%d", errors="coerce"
+        ).dt.strftime("%d/%m/%Y")
+    return df
 
 # Ejecutar
 ip_actual = obtener_ip_publica()
