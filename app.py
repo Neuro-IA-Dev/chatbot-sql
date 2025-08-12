@@ -215,8 +215,6 @@ if st.button("🔁 Reiniciar contexto", key="btn_reset_contexto"):
     st.info("Contexto reiniciado (tienda, canal, marca, artículo, género, cliente).")
 
 st.markdown("Haz una pregunta y el sistema generará y ejecutará una consulta SQL automáticamente.")
-if _es_meta_paises(pregunta):
-    pregunta += " Nota: Si la pregunta es 'cuántos países hay' o 'lista/descripcion de países', no filtres por MONEDA y devuelve DOS SELECTs: (1) conteo de países distintos; (2) listado DISTINCT del CASE SOCIEDAD_CO->nombre de país."
 llm = ChatOpenAI(
     model_name="gpt-4o",
     temperature=0,
@@ -699,7 +697,7 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
                 "¿Para qué país?",
                 options=["Chile", "Perú", "Bolivia"],
                 horizontal=True,
-                key="k_pais_radio",
+                key=f"k_pais_radio_{abs(hash(pregunta))%100000}",
             )
             pais_code = {"Chile": "1000", "Perú": "2000", "Bolivia": "3000"}[pais_label]
         st.session_state["clarif_pais_code"] = pais_code
@@ -786,6 +784,15 @@ if pregunta:
 
         # 3) Aplicar contexto y generar SQL con el LLM
         pregunta_con_contexto = aplicar_contexto(pregunta)
+        # Si la pregunta es meta sobre países (conteo/listado/descripción),
+# no pidas moneda ni un país específico y sugiere DOS SELECTs al LLM.
+if _solo_conteo_o_listado_de_paises(pregunta_con_contexto):
+    pregunta_con_contexto += (
+        " Nota: Si la pregunta es 'cuántos países hay' o 'lista/descripcion de países', "
+        "no filtres por MONEDA y devuelve DOS SELECTs: "
+        "(1) conteo de países distintos; "
+        "(2) listado DISTINCT del CASE SOCIEDAD_CO->nombre de país."
+    )
         prompt_text = sql_prompt.format(pregunta=pregunta_con_contexto)
         sql_query = llm.predict(prompt_text).replace("```sql", "").replace("```", "").strip()
 
