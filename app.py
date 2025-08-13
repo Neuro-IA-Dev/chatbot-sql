@@ -123,6 +123,37 @@ Puedo entender preguntas de **ventas retail** y generar la **consulta SQL** adec
 - Puedo exportar resultados a **Excel** desde la app.  
 - Uso `LIKE '%valor%'` para evitar pérdidas por capitalización/acentos.
 """)
+# --- Equivalencias español -> inglés para DESC_TIPO (no toca tus listas existentes) ---
+EQUIV_DESC_TIPO_ES_EN = {
+    # prendas comunes
+    r"\bchaqueta(s)?\b": "Jackets",
+    r"\bcamisa(s)?\b": "Shirts",
+    r"\bpolera(s)?\b": "Shirts",        # si usas "T-shirts" cambia aquí
+    r"\bpoler[óo]n(es)?\b": "Sweatshirts",
+    r"\bjean(s)?\b": "Jeans",
+    r"\bpantal[oó]n(es)?\b": "Pants",
+    r"\bsu[eé]ter(es)?\b": "Sweaters",
+    r"\bparche(s)?\b": "Patches",
+    r"\bbot[oó]n(es)?\b": "Buttons",
+    r"\bp[ií]n(es)?\b": "Pines",
+    r"\bbolsa(s)?\b": "Packing Bags",   # en tu VENTAS es "Packing Bags"
+    # puedes seguir agregando sin romper nada:
+    # r"\bgorro(s)?\b": "Knits",
+    # r"\btab(s)?\b": "Tabs",
+}
+
+def mapear_desc_tipo_es_en(texto: str) -> str:
+    """
+    Reemplaza, de forma segura (con \b límites de palabra), términos españoles por
+    su equivalente canónico en inglés para que el filtro DESC_TIPO LIKE funcione.
+    No modifica nada más del texto.
+    """
+    if not isinstance(texto, str) or not texto:
+        return texto
+    t = texto
+    for patron, canonico in EQUIV_DESC_TIPO_ES_EN.items():
+        t = re.sub(patron, canonico, t, flags=re.IGNORECASE)
+    return t
 
 def make_excel_download_bytes(df: pd.DataFrame, sheet_name="Datos"):
     """Devuelve bytes de un .xlsx con el dataframe."""
@@ -1017,7 +1048,8 @@ if pregunta:
     # 👇 Guarda el texto ORIGINAL del usuario (antes de cualquier sustitución)
     st.session_state["__last_user_question__"] = pregunta
     st.session_state["__last_ref_replacement__"] = None  # reset de tracking opcional
-
+    # ✅ Normaliza DESC_TIPO desde español a inglés SOLO para la pregunta que viaja al prompt
+    pregunta = mapear_desc_tipo_es_en(pregunta
     # ⬇️ Desambiguación (moneda/fechas/etc.)
     pregunta_clara = manejar_aclaracion(pregunta)
     if pregunta_clara:
