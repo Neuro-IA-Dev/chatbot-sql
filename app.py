@@ -90,6 +90,51 @@ _BRAND_ALIASES = {
     "DOCKERS": [r"dockers", r"\bdk\b"],
 }
 _BRAND_TO_LIKE = {"LEVI": "LEVI", "DOCKERS": "DOCKERS"}  # cómo debe ir en LIKE
+def _enforce_tipo_like(sql_texto: str, pregunta: str) -> str:
+    """
+    Si en la pregunta aparece un valor de DESC_TIPO (p.ej. Jeans, Jackets, Sweaters),
+    asegura que el WHERE use DESC_TIPO LIKE '%<tipo>%' en lugar de DESC_ARTICULO.
+    - Reemplaza condiciones mal puestas (DESC_ARTICULO LIKE '%Jeans%')
+    - Si no existe ningún filtro por el tipo, lo inyecta en el WHERE.
+    Opera sentencia por sentencia separada por ';'.
+    """
+    # Detecta el tipo mencionado en la pregunta ya normalizada (inglés)
+    tipo_mencionado = None
+    low_q = (pregunta or "").lower()
+    for t in _TIPOS_VALIDOS:
+        if t.lower() in low_q:
+            tipo_mencionado = t
+            break
+    if not tipo_mencionado:
+        return sql_texto
+
+    sentencias = [s.strip() for s in sql_texto.split(";") if s.strip()]
+    nuevas = []
+
+    pat_art_like = re.compile(
+        rf"(DESC_ARTICULO\s+LIKE\s*'%\s*{re.escape(tipo_mencionado)}\s*%')",
+        re.IGNORECASE
+    )
+    pat_tipo_like = re.compile(
+        rf"DESC_TIPO\s+LIKE\s*'%\s*{re.escape(tipo_mencionado)}\s*%'", re.IGNORECASE
+    )
+
+    for s in sentencias:
+        if not re.search(r"^\s*select\b", s, re.I):
+            nuevas.append(s)
+            continue
+
+        # 1) Si está mal (en DESC_ARTICULO), reemplaza por DESC_TIPO
+        s_corr = pat_art_like.sub(f"DESC_TIPO LIKE '%{tipo_mencionado}%'", s)
+
+        # 2) Si no hay ningún filtro por tipo, inyecta uno en el WHERE
+        if not pat_tipo_like.search(s_corr):
+            # Insertar condición DESC_TIPO LIKE '%tipo%'
+            s_corr = _inyectar_condicion_where(s_corr, f"DESC_TIPO LIKE '%{tipo_mencionado}%'")
+
+        nuevas.append(s_corr)
+
+    return ";\n".join(nuevas)
 
 def _detectar_marcas(texto: str) -> set[str]:
     found = set()
@@ -1283,6 +1328,8 @@ if _marcas_detectadas:
         sql_query = llm.predict(prompt_text).replace("```sql", "").replace("```", "").strip()
         # 👇 Forzar la regla de negocio de “bolsas no son artículos”
         sql_query = excluir_bolsas_y_servicios_post_sql(sql_query, pregunta)
+        # 🔧 Asegura que “Jeans/Jackets/…” se filtre por DESC_TIPO (no DESC_ARTICULO)
+        sql_query = _enforce_tipo_like(sql_query, pregunta)
         # 4) Forzar DISTINCT si corresponde
         sql_query = forzar_distinct_canal_si_corresponde(pregunta_con_contexto, sql_query)
 
