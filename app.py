@@ -796,7 +796,11 @@ if pregunta:
         # Prompt → SQL
         prompt_text = sql_prompt.format(pregunta=pregunta_con_contexto)
         sql_query = llm.predict(prompt_text).replace("```sql", "").replace("```", "").strip()
-
+        # 🔹 Parche rápido para evitar error de tabla 'ventas' no encontrada
+        sql_query = sql_query.replace("from ventas", "FROM VENTAS") \
+                     .replace("FROM ventas", "FROM VENTAS") \
+                     .replace("join ventas", "JOIN VENTAS") \
+                     .replace("JOIN ventas", "JOIN VENTAS")
         # Post-parches sobre el SQL
         sql_query = excluir_bolsas_y_servicios_post_sql(sql_query, pregunta)
         sql_query = _enforce_tipo_like(sql_query, pregunta)          # Jeans/Jackets → DESC_TIPO
