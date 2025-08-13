@@ -49,6 +49,68 @@ _HELP_TRIGGERS_RE = re.compile(
     r"\b(qu[eé]\s+puedo\s+preguntarte|ayuda|qu[eé]\s+sabes\s+hacer|help)\b",
     re.IGNORECASE
 )
+import re
+
+def _quiere_bolsas(pregunta: str) -> bool:
+    """True si el usuario pide explícitamente bolsas."""
+    return bool(re.search(r"\b(bolsa|bolsas|bag|bags|packing\s*bags)\b", str(pregunta), re.I))
+
+def _inyectar_condicion_where(sql: str, condicion: str) -> str:
+    """
+    Inserta una condición en el primer SELECT del SQL dado.
+    - Si ya hay WHERE, agrega AND <condicion>
+    - Si no hay WHERE, agrega WHERE <condicion>
+    No reescribe subconsultas; se aplica por sentencia.
+    """
+    # localiza FROM ... WHERE / GROUP BY / ORDER BY / LIMIT de la sentencia principal
+    m_where = re.search(r"\bwhere\b", sql, re.I)
+    m_group = re.search(r"\bgroup\s+by\b", sql, re.I)
+    m_order = re.search(r"\border\s+by\b", sql, re.I)
+    m_limit = re.search(r"\blimit\b", sql, re.I)
+
+    insert_pos = None
+    if m_where:
+        # ya hay WHERE → insertamos después del WHERE-block con AND al inicio del siguiente token lógico
+        # más simple/robusto: pegamos " AND (cond)" justo antes de GROUP/ORDER/LIMIT/fin
+        end_pos = min([p.start() for p in [m_group, m_order, m_limit] if p] + [len(sql)])
+        return sql[:end_pos] + f" AND ({condicion}) " + sql[end_pos:]
+    else:
+        # no hay WHERE → lo insertamos justo después del FROM ... antes de GROUP/ORDER/LIMIT/fin
+        # buscamos el primer token de corte tras FROM
+        m_from = re.search(r"\bfrom\b", sql, re.I)
+        if not m_from:
+            return sql  # no tocamos si es una forma rara
+        # insertamos " WHERE (condición) " antes del primer GROUP/ORDER/LIMIT/fin
+        start_after_from = m_from.end()
+        end_pos = min([p.start() for p in [m_group, m_order, m_limit] if p] + [len(sql)])
+        return sql[:end_pos] + f" WHERE ({condicion}) " + sql[end_pos:]
+
+def excluir_bolsas_y_servicios_post_sql(sql_texto: str, pregunta: str) -> str:
+    """
+    Aplica reglas de negocio innegociables:
+    - Excluir BOLSAS como artículos cuando el usuario NO las pidió.
+    - Excluir 'DESPACHO A DOMICILIO' como artículo (servicio).
+    Se procesa cada sentencia separada por ';'.
+    """
+    if _quiere_bolsas(pregunta):
+        # Si el usuario pidió bolsas, no tocamos nada.
+        return sql_texto
+
+    clausula = (
+        "UPPER(COALESCE(DESC_ARTICULO,'')) NOT LIKE '%BOLSA%'"
+        " AND UPPER(COALESCE(DESC_ARTICULO,'')) NOT LIKE '%PACKING BAG%'"
+        " AND UPPER(COALESCE(DESC_ARTICULO,'')) <> 'DESPACHO A DOMICILIO'"
+    )
+
+    sentencias = [s.strip() for s in sql_texto.split(";") if s.strip()]
+    nuevas = []
+    for s in sentencias:
+        # Solo intentamos si parece un SELECT sobre VENTAS o si selecciona DESC_ARTICULO
+        if re.search(r"^\s*select\b", s, re.I):
+            nuevas.append(_inyectar_condicion_where(s, clausula))
+        else:
+            nuevas.append(s)
+    return ";\n".join(nuevas)
 
 def render_help_capacidades():
     st.markdown("## 🤖 ¿Qué puedes preguntarme?")
@@ -1103,7 +1165,8 @@ if pregunta:
 
         prompt_text = sql_prompt.format(pregunta=pregunta_con_contexto)
         sql_query = llm.predict(prompt_text).replace("```sql", "").replace("```", "").strip()
-
+        # 👇 Forzar la regla de negocio de “bolsas no son artículos”
+        sql_query = excluir_bolsas_y_servicios_post_sql(sql_query, pregunta)
         # 4) Forzar DISTINCT si corresponde
         sql_query = forzar_distinct_canal_si_corresponde(pregunta_con_contexto, sql_query)
 
