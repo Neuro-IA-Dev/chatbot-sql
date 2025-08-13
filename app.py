@@ -1082,8 +1082,7 @@ def _tiene_moneda(texto: str) -> bool:
 
 def manejar_aclaracion(pregunta: str) -> Optional[str]:
     flags = _necesita_aclaracion(pregunta)
-        # Sufijo único para las keys de los widgets de aclaración
-    _SUF = str(abs(hash(pregunta)) % 100000)
+    _SUF = str(abs(hash(pregunta)) % 100000)  # sufijo único por pregunta
     if not any(flags.values()):
         return None
 
@@ -1116,7 +1115,7 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
             "¿En qué moneda(s) quieres ver los montos?",
             options=monedas_permitidas,
             default=sugeridas,
-            key="k_moneda_multi",
+            key=f"k_moneda_multi_{_SUF}",
             help="Si comparas varios países o pides ranking por país, sólo USD."
         )
     else:
@@ -1148,7 +1147,7 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
                 "¿Para qué país?",
                 options=["Chile", "Perú", "Bolivia"],
                 horizontal=True,
-                key=f"k_pais_radio_{abs(hash(pregunta))%100000}",
+                key=f"k_pais_radio_{_SUF}",
             )
             pais_code = {"Chile": "1000", "Perú": "2000", "Bolivia": "3000"}[pais_label]
         st.session_state["clarif_pais_code"] = pais_code
@@ -1158,11 +1157,11 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
     if flags["tienda_vs_cd"]:
         st.subheader("Tipo de ubicación")
         st.session_state["clarif_excluir_cd"] = st.checkbox(
-            "Excluir Centros de Distribución (CD)", value=True, key="k_excluir_cd_{_SUF}",
+            "Excluir Centros de Distribución (CD)", value=True, key=f"k_excluir_cd_{_SUF}",
         )
 
     # Confirmar (¡sólo un botón con esta key!)
-    if st.button("✅ Continuar con estas opciones", type="primary", key="btn_continuar_opciones"):
+    if st.button("✅ Continuar con estas opciones", type="primary", key=f"btn_continuar_opciones_{_SUF}"):
         moneda_sel = st.session_state.get("clarif_moneda")
         d = st.session_state.get("clarif_fecha_desde") if flags["fecha"] else None
         h = st.session_state.get("clarif_fecha_hasta") if flags["fecha"] else None
@@ -1226,10 +1225,10 @@ if _marcas_detectadas:
         _marcas_detectadas[0], _marcas_detectadas[0]
     )
 
-    manejar_aclaracion(pregunta)
+     # manejar_aclaracion(pregunta)
 
     # Normaliza DESC_TIPO desde español a inglés SOLO para la pregunta que viaja al prompt
-    pregunta = mapear_desc_tipo_es_en(pregunta)
+    # pregunta = mapear_desc_tipo_es_en(pregunta)
 
     # Desambiguación (moneda/fechas/etc.)
     pregunta_clara = manejar_aclaracion(pregunta)
