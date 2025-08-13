@@ -1046,12 +1046,14 @@ if pregunta:
     st.session_state["pending_question"] = pregunta
 
     # 👇 Guarda el texto ORIGINAL del usuario (antes de cualquier sustitución)
-    st.session_state["__last_user_question__"] = pregunta
-    st.session_state["__last_ref_replacement__"] = None  # reset de tracking opcional
-    # ✅ Normaliza DESC_TIPO desde español a inglés SOLO para la pregunta que viaja al prompt
-    pregunta = mapear_desc_tipo_es_en(pregunta
-    # ⬇️ Desambiguación (moneda/fechas/etc.)
-    pregunta_clara = manejar_aclaracion(pregunta)
+st.session_state["__last_user_question__"] = pregunta
+st.session_state["__last_ref_replacement__"] = None  # reset de tracking opcional
+
+# ✅ Normaliza DESC_TIPO desde español a inglés SOLO para la pregunta que viaja al prompt
+pregunta = mapear_desc_tipo_es_en(pregunta)
+
+# ⬇️ Desambiguación (moneda/fechas/etc.)
+pregunta_clara = manejar_aclaracion(pregunta)
     if pregunta_clara:
         # Reemplaza y limpia
         pregunta = pregunta_clara
