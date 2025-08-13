@@ -1045,19 +1045,20 @@ if pregunta:
     # Guarda siempre la última pregunta mientras dure la desambiguación
     st.session_state["pending_question"] = pregunta
 
-    # 👇 Guarda el texto ORIGINAL del usuario (antes de cualquier sustitución)
+    # Guarda el texto ORIGINAL del usuario (antes de cualquier sustitución)
     st.session_state["__last_user_question__"] = pregunta
     st.session_state["__last_ref_replacement__"] = None  # reset de tracking opcional
 
-# ✅ Normaliza DESC_TIPO desde español a inglés SOLO para la pregunta que viaja al prompt
-     pregunta = mapear_desc_tipo_es_en(pregunta)
+    # Normaliza DESC_TIPO desde español a inglés SOLO para la pregunta que viaja al prompt
+    pregunta = mapear_desc_tipo_es_en(pregunta)
 
-# ⬇️ Desambiguación (moneda/fechas/etc.)
+    # Desambiguación (moneda/fechas/etc.)
     pregunta_clara = manejar_aclaracion(pregunta)
     if pregunta_clara:
         # Reemplaza y limpia
         pregunta = pregunta_clara
-        st.session_state["pending_question"] = pregunta  # opcional: mantén enriquecida
+        st.session_state["pending_question"] = pregunta
+
 
     with st.chat_message("user"):
         st.markdown(pregunta)
