@@ -1253,7 +1253,7 @@ def asegurar_exclusion_servicios(sql: str) -> str:
     Excluye explícitamente bolsas, fletes y despacho, y evita 'PACKING BAGS' como tipo.
     Úsalo cuando la intención es de PRODUCTOS/ARTÍCULOS (no servicios).
     """
-    if not sql or "from ventas" not in sql.lower
+    if not sql or "from ventas" not in sql.lower():
 
 
 def _habla_de_pais(texto: str) -> bool:
