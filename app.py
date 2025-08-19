@@ -1,4 +1,3 @@
-
 # -*- coding: utf-8 -*-
 import os
 import json
@@ -50,175 +49,6 @@ _HELP_TRIGGERS_RE = re.compile(
     r"\b(qu[eé]\s+puedo\s+preguntarte|ayuda|qu[eé]\s+sabes\s+hacer|help)\b",
     re.IGNORECASE
 )
-import re
-
-def _quiere_bolsas(pregunta: str) -> bool:
-    """True si el usuario pide explícitamente bolsas."""
-    return bool(re.search(r"\b(bolsa|bolsas|bag|bags|packing\s*bags)\b", str(pregunta), re.I))
-
-def _inyectar_condicion_where(sql: str, condicion: str) -> str:
-    """
-    Inserta una condición en el primer SELECT del SQL dado.
-    - Si ya hay WHERE, agrega AND <condicion>
-    - Si no hay WHERE, agrega WHERE <condicion>
-    No reescribe subconsultas; se aplica por sentencia.
-    """
-    # localiza FROM ... WHERE / GROUP BY / ORDER BY / LIMIT de la sentencia principal
-    m_where = re.search(r"\bwhere\b", sql, re.I)
-    m_group = re.search(r"\bgroup\s+by\b", sql, re.I)
-    m_order = re.search(r"\border\s+by\b", sql, re.I)
-    m_limit = re.search(r"\blimit\b", sql, re.I)
-
-    insert_pos = None
-    if m_where:
-        # ya hay WHERE → insertamos después del WHERE-block con AND al inicio del siguiente token lógico
-        # más simple/robusto: pegamos " AND (cond)" justo antes de GROUP/ORDER/LIMIT/fin
-        end_pos = min([p.start() for p in [m_group, m_order, m_limit] if p] + [len(sql)])
-        return sql[:end_pos] + f" AND ({condicion}) " + sql[end_pos:]
-    else:
-        # no hay WHERE → lo insertamos justo después del FROM ... antes de GROUP/ORDER/LIMIT/fin
-        # buscamos el primer token de corte tras FROM
-        m_from = re.search(r"\bfrom\b", sql, re.I)
-        if not m_from:
-            return sql  # no tocamos si es una forma rara
-        # insertamos " WHERE (condición) " antes del primer GROUP/ORDER/LIMIT/fin
-        start_after_from = m_from.end()
-        end_pos = min([p.start() for p in [m_group, m_order, m_limit] if p] + [len(sql)])
-        return sql[:end_pos] + f" WHERE ({condicion}) " + sql[end_pos:]
-# === Marca ↔ alias ============================================================
-_BRAND_ALIASES = {
-    "LEVI": [r"levis", r"levi['´`’]s", r"levi\s*s", r"\blv\b"],
-    "DOCKERS": [r"dockers", r"\bdk\b"],
-}
-_BRAND_TO_LIKE = {"LEVI": "LEVI", "DOCKERS": "DOCKERS"}  # cómo debe ir en LIKE
-
-def _detectar_marcas(texto: str) -> set[str]:
-    found = set()
-    t = (texto or "").lower()
-    for brand, pats in _BRAND_ALIASES.items():
-        for p in pats:
-            if re.search(p, t, re.I):
-                found.add(brand)
-                break
-    return found
-
-def _quitar_marca_de_fragmentos_tienda(texto: str) -> str:
-    """
-    Quita prefijos de marca cuando queden pegados al nombre de tienda,
-    p.ej. 'levis tobalaba' -> 'tobalaba', 'dk costanera' -> 'costanera'.
-    No toca casos donde la marca no antecede a una palabra (para no romper marcas sueltas).
-    """
-    t = texto
-    for pats in _BRAND_ALIASES.values():
-        for p in pats:
-            # patrón: marca + uno o más espacios + palabra
-            t = re.sub(rf"\b{p}\s+(\w+)", r"\1", t, flags=re.I)
-    return t
-
-def normalizar_marcas_en_pregunta(pregunta: str) -> tuple[str, list[str]]:
-    """
-    - Detecta marcas (LEVI/DOCKERS) en la pregunta.
-    - Elimina la marca delante de posibles nombres de tienda.
-    - Añade una guía ('Usar DESC_MARCA LIKE ...') para reforzar al LLM.
-    Devuelve (pregunta_normalizada, marcas_detectadas)
-    """
-    marcas = sorted(_detectar_marcas(pregunta))
-    if not marcas:
-        return pregunta, []
-
-    pregunta_sin_prefijo_en_tienda = _quitar_marca_de_fragmentos_tienda(pregunta)
-
-    hints = []
-    for m in marcas:
-        like = _BRAND_TO_LIKE.get(m, m)
-        hints.append(f"Usar DESC_MARCA LIKE '%{like}%'")
-
-    guia = " (" + "; ".join(hints) + ")."
-    return (pregunta_sin_prefijo_en_tienda.strip() + guia), marcas
-
-# === Parche sobre el SQL generado ============================================
-def _sql_inyectar_brand_clause(sql: str, brand_like: str) -> str:
-    """
-    Si el SQL ya tiene WHERE, agrega AND DESC_MARCA LIKE '%brand_like%'.
-    Si no, inserta WHERE DESC_MARCA LIKE ...
-    No reescribe subconsultas; opera por sentencia.
-    """
-    m_where = re.search(r"\bwhere\b", sql, re.I)
-    m_group = re.search(r"\bgroup\s+by\b", sql, re.I)
-    m_order = re.search(r"\border\s+by\b", sql, re.I)
-    m_limit = re.search(r"\blimit\b", sql, re.I)
-    cut = min([p.start() for p in [m_group, m_order, m_limit] if p] + [len(sql)])
-    clause = f" DESC_MARCA LIKE '%{brand_like}%' "
-    if m_where:
-        return sql[:cut] + " AND " + clause + sql[cut:]
-    else:
-        # buscamos FROM para colocar WHERE tras FROM-bloque
-        m_from = re.search(r"\bfrom\b", sql, re.I)
-        if not m_from:  # caso raro, no tocamos
-            return sql
-        return sql[:cut] + " WHERE " + clause + sql[cut:]
-
-def separar_marca_de_tienda_en_sql(sql_texto: str) -> str:
-    """
-    Corrige patrones WHERE DESC_TIENDA LIKE '%(levis|dk|dockers|...) algo%'
-    -> WHERE DESC_TIENDA LIKE '%algo%' AND DESC_MARCA LIKE '%LEVI/DOCKERS%'
-    para cada SELECT del script.
-    """
-    sentencias = [s.strip() for s in sql_texto.split(";") if s.strip()]
-    nuevas = []
-
-    for s in sentencias:
-        if not re.search(r"^\s*select\b", s, re.I):
-            nuevas.append(s)
-            continue
-
-        original = s
-        corrected = s
-
-        # Para cada brand, si aparece dentro del LIKE de tienda, lo retiramos.
-        for brand, pats in _BRAND_ALIASES.items():
-            for p in pats:
-                # Busca ... DESC_TIENDA LIKE '%<marca> <resto>%'
-                regex = rf"(DESC_TIENDA\s+LIKE\s*'%\s*){p}\s+([^%']+)(%')"
-                m = re.search(regex, corrected, re.I)
-                if m:
-                    resto = m.group(2).strip()
-                    corrected = re.sub(regex, rf"\1{resto}\3", corrected, flags=re.I)
-                    corrected = _sql_inyectar_brand_clause(
-                        corrected, _BRAND_TO_LIKE.get(brand, brand)
-                    )
-                    break  # una coincidencia es suficiente por sentencia
-
-        nuevas.append(corrected if corrected else original)
-
-    return ";\n".join(nuevas)
-
-def excluir_bolsas_y_servicios_post_sql(sql_texto: str, pregunta: str) -> str:
-    """
-    Aplica reglas de negocio innegociables:
-    - Excluir BOLSAS como artículos cuando el usuario NO las pidió.
-    - Excluir 'DESPACHO A DOMICILIO' como artículo (servicio).
-    Se procesa cada sentencia separada por ';'.
-    """
-    if _quiere_bolsas(pregunta):
-        # Si el usuario pidió bolsas, no tocamos nada.
-        return sql_texto
-
-    clausula = (
-        "UPPER(COALESCE(DESC_ARTICULO,'')) NOT LIKE '%BOLSA%'"
-        " AND UPPER(COALESCE(DESC_ARTICULO,'')) NOT LIKE '%PACKING BAG%'"
-        " AND UPPER(COALESCE(DESC_ARTICULO,'')) <> 'DESPACHO A DOMICILIO'"
-    )
-
-    sentencias = [s.strip() for s in sql_texto.split(";") if s.strip()]
-    nuevas = []
-    for s in sentencias:
-        # Solo intentamos si parece un SELECT sobre VENTAS o si selecciona DESC_ARTICULO
-        if re.search(r"^\s*select\b", s, re.I):
-            nuevas.append(_inyectar_condicion_where(s, clausula))
-        else:
-            nuevas.append(s)
-    return ";\n".join(nuevas)
 
 def render_help_capacidades():
     st.markdown("## 🤖 ¿Qué puedes preguntarme?")
@@ -1218,14 +1048,6 @@ if pregunta:
     # Guarda el texto ORIGINAL del usuario (antes de cualquier sustitución)
     st.session_state["__last_user_question__"] = pregunta
     st.session_state["__last_ref_replacement__"] = None  # reset de tracking opcional
-    # 👇 Normaliza marcas en la pregunta (LEVI/DOCKERS) y evita que contaminen la tienda
-pregunta, _marcas_detectadas = normalizar_marcas_en_pregunta(pregunta)
-if _marcas_detectadas:
-    st.session_state.setdefault("contexto", {})["DESC_MARCA"] = _BRAND_TO_LIKE.get(
-        _marcas_detectadas[0], _marcas_detectadas[0]
-    )
-
-    manejar_aclaracion(pregunta)
 
     # Normaliza DESC_TIPO desde español a inglés SOLO para la pregunta que viaja al prompt
     pregunta = mapear_desc_tipo_es_en(pregunta)
@@ -1281,8 +1103,7 @@ if _marcas_detectadas:
 
         prompt_text = sql_prompt.format(pregunta=pregunta_con_contexto)
         sql_query = llm.predict(prompt_text).replace("```sql", "").replace("```", "").strip()
-        # 👇 Forzar la regla de negocio de “bolsas no son artículos”
-        sql_query = excluir_bolsas_y_servicios_post_sql(sql_query, pregunta)
+
         # 4) Forzar DISTINCT si corresponde
         sql_query = forzar_distinct_canal_si_corresponde(pregunta_con_contexto, sql_query)
 
