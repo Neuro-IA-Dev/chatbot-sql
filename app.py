@@ -392,7 +392,7 @@ def forzar_articulo_y_excluir_bolsas(pregunta: str, sql: str) -> str:
     )
 
     # Asegurar artículo
-    if _tipoarticulo = 'mode'" not in s.lower():
+    if "cod_tipoarticulo = 'mode'" not in s.lower():
         s = _inyectar_predicado_where(s, "COD_TIPOARTICULO = 'MODE'")
 
     # Excluir por descripción (bolsas/servicios)
