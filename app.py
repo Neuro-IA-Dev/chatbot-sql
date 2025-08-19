@@ -130,6 +130,14 @@ Puedo entender preguntas de **ventas retail** y generar la **consulta SQL** adec
 ---
 
 ### 🧱 Reglas clave que aplico (del prompt)
+# MÁRGENES (cuando no existe columna MARGEN)
+- Si piden **margen** en monto (margen bruto / utilidad), calcula:
+  (SUM(INGRESOS) - SUM(COSTOS))  AS MARGEN
+- Si piden **GM% / margen porcentual** (señales: "gm%", "%", "porcentaje"):
+  ((SUM(INGRESOS) - SUM(COSTOS)) / NULLIF(SUM(INGRESOS),0)) * 100  AS GM_PORCENTAJE
+- No uses la columna MARGEN (no existe). Siempre deriva a partir de INGRESOS y COSTOS.
+- Agrupa por las dimensiones solicitadas y aplica MONEDA solo si se trata de métricas monetarias (para GM% se puede filtrar MONEDA=’USD’ para normalizar).
+-Importe no existe, siempre considerar ingreso. 
 - **Campos descriptivos:** “tienda, marca, canal, producto…” ⇒ `DESC_*` (no `COD_*`).  
 - **Fechas:** `FECHA_DOCUMENTO` **formato `YYYYMMDD` sin guiones**.  
 - **Unidades negativas:** son devoluciones ⇒ si se habla de ventas o “baratos”, **`UNIDADES > 0`**.  
