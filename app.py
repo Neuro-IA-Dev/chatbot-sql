@@ -779,14 +779,11 @@ def buscar_sql_en_cache(pregunta_nueva, umbral_similitud=0.94):  # antes 0.90
             similitud = float(np.dot(vec_nuevo, vec_guardado) / (n_nuevo * n_guardado))
             if similitud > mejor_sim:
                 mejor_sim, mejor_sql = similitud, row["sql_generado"]
-
-            if mejor_sim >= umbral_similitud:
-                # ✅ Validación adicional: solo reutiliza si el SQL satisface la intención de la nueva pregunta
-                if _should_reuse_cached_sql(pregunta_nueva, mejor_sql):
-                    return mejor_sql
-                # Si no cumple, no reutilizamos caché y forzamos nueva generación
-            return None
-
+    if mejor_sim >= umbral_similitud:
+        if _should_reuse_cached_sql(pregunta_nueva, mejor_sql):
+            return mejor_sql
+        return None
+  return None
 
 # ==== DESAMBIGUACIÓN: detectores y UI ========================================
 
