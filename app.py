@@ -555,103 +555,83 @@ def es_consulta_segura(sql):
 
 sql_prompt = PromptTemplate(
     input_variables=["pregunta"],
-    template="""
-1. Si el usuario menciona términos como "tienda", "cliente", "marca", "canal", "producto", "temporada", "calidad", etc., asume que se refiere a su campo descriptivo (DESC_...) y **no al código (COD_...)**, excepto que el usuario especifique explícitamente "código de...".
+    template = """
+# CONTEXTO
+- Trabajas sobre el tablón único **VENTAS** (no asumas joins externos).
+- Devuelve **solo** la consulta **SQL** (MySQL/MariaDB), una sentencia por SELECT, **sin texto extra**.
+- La pregunta puede traer **anotaciones** (p. ej. “Filtrar con …”, “usar FECHA_DOCUMENTO entre …”); **obedécelas** literalmente.
 
-   - Ejemplo: "tienda" → DESC_TIENDA
-   - Ejemplo: "marca" → DESC_MARCA
-   - Ejemplo: "calidad" → DESC_CALIDAD
-   - Ejemplo: "temporada" → DESC_TEMPORADA
-   - Ejemplo: "producto" → DESC_ARTICULO
-   - Ejemplo: "código de tienda" → COD_TIENDA
-    Un articulo es solo cuando el DESC_TIPOARTICULO = "MODE". Si DESC_TIPOARTICULO = "DIEN" Entonces considerar como un servicio
-    La columna SOCIEDAD_CO representa al pais 1000 = "Chile", 2000 = "Perú" y 3000 = "Bolivia" siempre que se mencione pais, usa esta regla.
-    
-   Cuando el usuario mencione palabras que parecen referirse a nombres de marcas o productos (por ejemplo: "Levis", "Nike", "Adidas", etc.), búscalas en DESC_MARCA.
+# MAPEO DE CAMPOS
+- Si se menciona “tienda, cliente, marca, canal, producto/artículo, temporada, calidad…”, usa **DESC_*** (no COD_*), salvo que pidan **“código de …”**.
+  - “tienda”→DESC_TIENDA | “marca”→DESC_MARCA | “calidad”→DESC_CALIDAD | “temporada”→DESC_TEMPORADA | “producto/artículo/sku”→DESC_ARTICULO o DESC_SKU según contexto.
+- País (SOCIEDAD_CO): 1000=Chile, 2000=Perú, 3000=Bolivia. Para “por país / ranking por país / ¿en qué país…?” usa:
+  `CASE SOCIEDAD_CO WHEN '1000' THEN 'Chile' WHEN '2000' THEN 'Perú' WHEN '3000' THEN 'Bolivia' END AS PAIS`.
 
-   Cuando el usuario mencione nombres de ciudades, centros comerciales u otros lugares (por ejemplo: "Costanera", "Talca", "Plaza Vespucio"), búscalos en DESC_TIENDA.
+# DEFINICIONES DE ARTÍCULO VS SERVICIO
+- **Artículo** ⇢ `DESC_TIPOARTICULO='MODE'`.
+- **Servicio / NO Artículo** ⇢ `DESC_TIPOARTICULO<>'MODE'` o descripciones de servicio.
+- **IMPORTANTE (producto/artículo)**: cuando la intención es **producto/artículo**:
+  1) **Restringe** a `DESC_TIPOARTICULO='MODE'`.
+  2) **Excluye** explícitamente **bolsas/packing** y servicios:
+     - `UPPER(DESC_ARTICULO) NOT LIKE '%BOLSA%'`
+     - `UPPER(DESC_ARTICULO) NOT LIKE 'DESPACHO A DOMICILIO'`
+     - `UPPER(DESC_ARTICULO) NOT LIKE 'FLETE%'`
+     - `UPPER(DESC_TIPO) <> 'PACKING BAGS'`  (si existe DESC_TIPO)
+- Solo **incluye** bolsas/packing/fletes/ despachos/cualquier servicio si el usuario lo pide **explícitamente** (“bolsas”, “packing bags”, “flete”, “despacho”, “servicio”).
+- Corrección: **“DESPACHO A DOMICILIO” no es artículo** (trátalo como servicio).
 
-   Cuando filtres por estos campos descriptivos (DESC_...), usa SIEMPRE la cláusula LIKE '%valor%' en lugar de =, para permitir coincidencias parciales o mayúsculas/minúsculas.
+# REGLAS GENERALES
+1) **Filtros texto**: en DESC_* usa `LIKE '%valor%'` (case-insensitive); nunca `=`.
+2) **Moneda**: filtra por MONEDA **solo** si la métrica es monetaria (INGRESOS, COSTOS, MARGEN, PRECIO, IMPORTE, VALOR, TICKET).  
+   - Para conteos/listados no monetarios (tiendas, clientes, unidades), **no** agregues condición de MONEDA.
+3) **Unidades negativas**: devoluciones. Si hablan de “vende/ventas/top/más vendido/baratos/caros”, agrega `UNIDADES > 0`.
+4) **Fecha**: FECHA_DOCUMENTO es `'YYYYMMDD'` sin guiones. Ej.: `BETWEEN '20250101' AND '20250131'`.
+5) **Tiendas**: los **Centros de Distribución** no son tiendas; **exclúyelos**:
+   - `DESC_TIENDA NOT IN ('Centro de Distribución LEVI','CENTRO DISTRIBUCION LEVI','CENTRO DISTRIBUCION LEVIS PERU')`.
+6) **Conteos**:
+   - “¿Cuántas tiendas?” → `COUNT(DISTINCT DESC_TIENDA)` + exclusión de CD.
+   - “¿Cuántos canales?” → `COUNT(DISTINCT DESC_CANAL)`.
+   - “¿Cuántos clientes?” → `COUNT(DISTINCT NOMBRE_CLIENTE)`.
+7) **Canal de una tienda** (“¿de qué canal es esa tienda?”): `SELECT DISTINCT DESC_CANAL ...` (evita duplicados).
+8) **Top / ranking**:
+   - Artículos: agrupa por **DESC_ARTICULO** (y extras si los piden: COD_MODELO, TALLA, LARGO, COD_COLOR), con `UNIDADES > 0`,
+     `ORDER BY SUM(UNIDADES) DESC` y `LIMIT k` si corresponde.  
+     **Cuando la intención es artículo/producto, respeta la exclusión de bolsas/fletes/despachos (ver arriba).**
+   - “Ventas por tipo” (resumen) ⇢ agrupa por **DESC_TIPO**. En listados comunes **no** muestres DESC_TIPO como descripción.
+9) **País**:
+   - Si piden comparación/ranking por país, agrupa por SOCIEDAD_CO y expón **PAIS** con el CASE.
+10) **Promociones**:
+   - Descripción: `D_PROMO`; código: `PROMO`. Se considera **con promoción** cuando ambos **no** son nulos.  
+   - “Promociones” también puede significar `PROMO <> '0.00'` (si aplica en tus datos).
+11) **Documentos**: `TIPO_DOC='BO'` significa **boleta**.
+12) **Precio de venta**: si preguntan por “precio de venta” considera el **ingreso unitario cuando cantidad = 1** (usa DISTINCT si aplica).
+13) **Líneas/Dominios**: “Accesorios”, “Bottoms”, “Tops”, “Customization”, “Insumos” corresponden a **DESC_LINEA**.
+14) **Pronombres/Contexto**:
+   - “este/ese artículo/producto” ⇒ `DESC_ARTICULO LIKE '%valor%'` y `UNIDADES > 0` (no uses DESC_TIPO).
+   - “estos/esos artículos/productos” cuando venga una lista anotada ⇒ `DESC_ARTICULO IN (...)` y `UNIDADES > 0`.
+15) **Fechas en filtros**: siempre en **YYYYMMDD** sin guiones.
+16) **Seguridad de sintaxis**: no coloques `;` antes de `AND/WHERE/GROUP/ORDER/LIMIT`; el `;` solo puede ir al **final** de la sentencia.
 
-   Cuando DESC_TIENDA sea igual a "Centro de Distribución LEVI" o "CENTRO DISTRIBUCION LEVIS PERU" No se considera como una tienda, si no como "Centro de distribución" y no se contabiliza como tienda para ningun calculo.
-   Para considerarse articulo el campo DESC_ARTICULO no debe estar en "Bolsa mediana LEVI'S®", "Bolsa chica LEVI'S®","Bolsa grande LEVI'S®") Todo lo que DESC_ARTICULO contenga "bolsa" se considera un nuevo TIPO = "Bolsa"
-   Cuando DESC_ARTICULO in ("Bolsa mediana LEVI'S®","Bolsa chica LEVI'S®","Bolsa grande LEVI'S®") no se considera un articulo, si no una Bolsa. Si se pregunta cuantas bolsas usa DESC_ARTICULO in ("Bolsa mediana LEVI'S®","Bolsa chica LEVI'S®","Bolsa grande LEVI'S®") y si se pregunta
-   por Bolsas medianas usa DESC_ARTICULO = ("Bolsa mediana LEVI'S®") , bolsa chica usa  DESC_ARTICULO = ("Bolsa chica LEVI'S®"), y bolsa grande usa  DESC_ARTICULO = ("Bolsa grande LEVI'S®")
-   
-2. Si el usuario pide:
-   - "¿Cuántas tiendas?" o "total de tiendas": usa COUNT(DISTINCT DESC_TIENDA) where DESC_TIENDA <> ("Centro de Distribución LEVI","CENTRO DISTRIBUCION LEVIS PERU")
-   - "¿Cuántos canales?" → COUNT(DISTINCT DESC_CANAL)
-   - "¿Cuántos clientes?" → COUNT(DISTINCT NOMBRE_CLIENTE)
+# PATRONES COMUNES
+- “¿Qué producto/artículo se vende más por tienda?”  
+  - Agrupa por `DESC_TIENDA, DESC_ARTICULO`, filtra `UNIDADES > 0`, **excluye CD**, **excluye bolsas/fletes/despachos** (ver sección de producto/artículo).  
+  - Ordena por `DESC_TIENDA, SUM(UNIDADES) DESC`. (Si piden “el más vendido por tienda” en una sola fila por tienda, puedes usar subconsulta con ranking o LIMIT por tienda si lo soporta tu versión; si no, devolver listado ordenado por tienda es aceptable.)
+- “Lista de países disponibles / cuántos países hay”  
+  - No filtres por MONEDA. Devuelve dos SELECTs:
+    1) `SELECT COUNT(DISTINCT SOCIEDAD_CO) AS TOTAL_PAISES FROM VENTAS;`
+    2) `SELECT DISTINCT CASE SOCIEDAD_CO ... END AS PAIS FROM VENTAS;`
 
-3. Siempre que se mencione:
-   - "ventas", "ingresos","precios": usar la columna INGRESOS
-   - "costos": usar COSTOS
-   - "unidades vendidas": usar UNIDADES
-   - "producto", "artículo", "sku": puedes usar DESC_ARTICULO o DESC_SKU dependiendo del contexto.
+# CHECKLIST (AUTO-VERIFICACIÓN, NO MOSTRAR)
+- ¿La intención dice **producto/artículo**? → ¿agregué `DESC_TIPOARTICULO='MODE'` y **excluí** `%BOLSA%`, `DESPACHO A DOMICILIO`, `FLETE%` y `DESC_TIPO<>'PACKING BAGS'`?
+- ¿La métrica es **monetaria**? Si **no**, ¿evité filtrar por MONEDA?
+- ¿Excluí **Centros de Distribución** cuando corresponde a tiendas?
+- ¿Apliqué `UNIDADES > 0` cuando hablan de ventas/top/más vendido/precios?
+- ¿Usé `LIKE '%valor%'` en DESC_* y fechas en **YYYYMMDD**?
+- Si es por país, ¿expones **PAIS** con el CASE?
+- ¿Evité `; AND` / `; WHERE` en medio de la sentencia?
 
-4. No asumas que hay relaciones externas: toda la información está embebida en el tablon VENTAS.
-
-5. Cuando pregunten por montos como ingresos o ventas, consulta si la información requerida debe ser en CLP o USD. Esta información está disponible en la columna MONEDA.
-
-6. Cuando pregunten algo como "muestrame el codigo y descripcion de todas las tiendas que hay" debes hacer un distinct.
-
-7. "Despacho a domicilio" es un ARTICULO
-
-8. Fecha de venta es FECHA_DOCUMENTO.
-
-9.- Si se menciona "para mujer", "de mujer", "femenino" o "de dama", filtra con DESC_GENERO LIKE '%woman%'.
-- Si se menciona "para hombre", "masculino", "de varón" o "de caballero", filtra con DESC_GENERO LIKE '%men%'.
-- Si se menciona "unisex", usa DESC_GENERO LIKE '%unisex%'.
-
-10. Siempre que se pregunte "¿de qué canal es esa tienda?", "¿qué canal pertenece?" o algo similar, usa SELECT DISTINCT DESC_CANAL ... para evitar resultados duplicados.
-
-11. Si se pregunta por promociones, se refiere al campo D_PROMO como descripcion y el PROMO como codigo. Un articulo se vendio con promocion cuando estos campos no son null.
-
-12. Cuando TIPO_DOC es BO quiere decir que es BOLETA
-
-13. Unidades negativas son devoluciones, si se pregunta por precios bajos o baratos, solo considerar unidades mayores a 0
-
-14. EL DESC_ARTICULO = "DESPACHO A DOMICILIO" no se considera articulo si no un servicio. 
-
-15. COD_MODELO, COD_COLOR, TALLA y LARGO son campos que no tienen descripcion solo mostrarlos asi
-
-16. Cuando se hable de un articulo, usar DESC_ARTICULO para mostrarlo a menos que se pida solo el Codigo. ejemplo "Jeans mas vendido de mujer por modelo, talla, largo y color"  DESC_ARTICULO, COD_MODELO, etc.
-
-17. Cuando filtres por FECHA_DOCUMENTO, usa SIEMPRE formato 'YYYYMMDD' sin guiones. Ejemplo:
-    WHERE FECHA_DOCUMENTO BETWEEN '20250101' AND '20250131'
-    (La columna es numérica/texto sin guiones; NO uses '2025-01-01').
-
-18. Si la consulta es por país (ranking, "más vende", "por país", etc.):
-    - Agrupa por SOCIEDAD_CO y decodifica el nombre con:
-      CASE SOCIEDAD_CO WHEN '1000' THEN 'Chile' WHEN '2000' THEN 'Perú' WHEN '3000' THEN 'Bolivia' END AS PAIS
-19. Cuando la pregunta use "se vende / vendido(s)" (ventas por unidades),
-    EXCLUYE devoluciones: agrega WHERE UNIDADES > 0.
-    20. Si la pregunta es comparación/ranking/agrupación "por país" o contiene frases como
-    "¿en qué país se vende…?", no pidas un país específico; agrupa por SOCIEDAD_CO y
-    mapea el nombre del país con el CASE.
-Cuando se reemplace un valor como "ese artículo", "esa tienda", etc., asegúrate de utilizar siempre LIKE '%valor%' en lugar de = para evitar errores por coincidencias exactas.
-
-20. Si se habla de "Accesorios", "Bottoms", "Tops", "Customization", "Insumos" son Lineas de articulos y se considera el campo DESC_LINEA.
-
-21 Cuando se pregunta por el precio de venta se considera el distinct ingreso donde la cantidad = 1. 
-
-22. Si la pregunta menciona un valor de DESC_TIPO (Back Patches, Buttons, Jackets, Jeans, Knits,
-Packing Bags, Pants, Patches, Pines, Shirts, Sin Tipo, Sweaters, Sweatshirts, Tabs, (Vacías)),
-úsalo SOLO como filtro: DESC_TIPO LIKE '%<valor>%' (case-insensitive) y no como columna a mostrar.
-- Si piden "más vendido / top / ranking / mejor vendido", muestra y agrupa por DESC_ARTICULO
-  (y por atributos extra si los piden: COD_MODELO, TALLA, LARGO, COD_COLOR, etc.),
-  con UNIDADES > 0, ORDER BY SUM(UNIDADES) DESC y LIMIT 1 si corresponde excepto que sea por una dimension mas grande ejemplo
-  "Cual es la promocion mas vendida por tienda va sin limit=1 para mostrar todas las tiendas.
-- Si piden "montos" por ese tipo, usa SUM(INGRESOS) respetando MONEDA, pero los listados deben
-  seguir mostrando DESC_ARTICULO (no DESC_TIPO) salvo que explícitamente pidan "por tipo".
-- Sólo cuando la intención sea un resumen por tipo (ej. "ventas por tipo"), agrupa por DESC_TIPO.
-Promociones es donde PROMO<>"0.00"
-23. Si un pronombre (ej. "ese pin", "ese artículo", "ese producto") se resolvió a una
-    descripción concreta (de contexto) y corresponde a un ARTÍCULO, el filtro DEBE ser
-    DESC_ARTICULO LIKE '%<valor>%' con UNIDADES > 0, y NO se debe usar DESC_TIPO.
-🔐 Recuerda usar WHERE, GROUP BY o ORDER BY cuando el usuario pregunte por filtros, agrupaciones o rankings.
-
-🖍️ Cuando generes la consulta SQL, no expliques la respuesta —solo entrega el SQL limpio y optimizado para MySQL.
+# INSTRUCCIÓN FINAL
+Genera **solo** el SQL limpio y optimizado para MySQL/MariaDB, obedeciendo cualquier anotación presente en la pregunta.
 
 Pregunta: {pregunta}
 """,
