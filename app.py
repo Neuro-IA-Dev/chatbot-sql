@@ -179,8 +179,8 @@ Puedo entender preguntas de **ventas retail** y generar la **consulta SQL** adec
   - Nombres como *“CENTRO DE DISTRIBUCIÓN LEVI”* y *“CENTRO DISTRIBUCION LEVIS PERU”* **no** cuentan como tienda.  
   - Puedes **excluir/incluir** CD según lo pidas.
 - **Artículo vs Servicio:**  
-  - `DESC_TIPOARTICULO = 'MODE'` ⇒ artículo  
-  - `DESC_TIPOARTICULO = 'DIEN'` o `DESC_ARTICULO = 'DESPACHO A DOMICILIO'` ⇒ servicio  
+  - `COD_TIPOARTICULO = 'MODE'` ⇒ artículo  
+  - `COD_TIPOARTICULO = 'DIEN'` o `DESC_ARTICULO = 'DESPACHO A DOMICILIO'` ⇒ servicio  
 - **Precio de venta:** considera **ingreso unitario (cantidad = 1)**.  
 - **Tipos (DESC_TIPO):** *Back Patches, Jeans, Sweaters…*  
   - Se usan **como filtro** (`DESC_TIPO LIKE '%valor%'`)  
