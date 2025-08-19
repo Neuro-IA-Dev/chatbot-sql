@@ -576,9 +576,15 @@ sql_prompt = PromptTemplate(
      - `UPPER(DESC_ARTICULO) NOT LIKE '%BOLSA%'`
      - `UPPER(DESC_ARTICULO) NOT LIKE 'DESPACHO A DOMICILIO'`
      - `UPPER(DESC_ARTICULO) NOT LIKE 'FLETE%'`
-     - `UPPER(DESC_TIPO) <> 'PACKING BAGS'`  (si existe DESC_TIPO)
+   
 - Solo **incluye** bolsas/packing/fletes/ despachos/cualquier servicio si el usuario lo pide **explícitamente** (“bolsas”, “packing bags”, “flete”, “despacho”, “servicio”).
 - Corrección: **“DESPACHO A DOMICILIO” no es artículo** (trátalo como servicio).
+- Marcas:
+  - Si la pregunta menciona LEVI’S / LEVIS / LEVI / LV → filtra SIEMPRE por DESC_MARCA (no por tienda/tipo/artículo):
+    AND DESC_MARCA LIKE '%LEVI%'
+  - Si la pregunta menciona DOCKERS / DK → filtra SIEMPRE por DESC_MARCA:
+    AND DESC_MARCA LIKE '%DOCKERS%'
+  - No uses DESC_TIENDA/ARTICULO/TIPO para reconocer marcas, salvo que el usuario lo pida explícitamente.
 
 # REGLAS GENERALES
 1) **Filtros texto**: en DESC_* usa `LIKE '%valor%'` (case-insensitive); nunca `=`.
