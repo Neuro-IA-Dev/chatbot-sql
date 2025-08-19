@@ -709,7 +709,7 @@ def guardar_en_cache(pregunta, sql_generado, embedding):
     except Exception as e:
         st.warning(f"❌ No se guardó en semantic_cache: {e}")
 
-def buscar_sql_en_cache(pregunta_nueva, umbral_similitud=0.82):  # antes 0.90
+def buscar_sql_en_cache(pregunta_nueva, umbral_similitud=0.89):  # antes 0.90
     embedding_nuevo = obtener_embedding(pregunta_nueva)
     if embedding_nuevo is None:
         return None
