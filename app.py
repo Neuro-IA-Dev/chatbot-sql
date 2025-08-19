@@ -141,6 +141,30 @@ EQUIV_DESC_TIPO_ES_EN = {
     # r"\bgorro(s)?\b": "Knits",
     # r"\btab(s)?\b": "Tabs",
 }
+def forzar_excluir_centros_distribucion(sql: str) -> str:
+    """
+    Si el SQL generado tiene FROM VENTAS pero no excluye CDs,
+    añade filtro para que no aparezcan en los resultados de tiendas.
+    """
+    if not sql or "from ventas" not in sql.lower():
+        return sql
+
+    s = sql.lower()
+    # Ya excluye centros?
+    if "centro distribucion" in s:
+        return sql
+
+    # Detectar si ya hay WHERE
+    if " where " in s:
+        return re.sub(r"(?i)(where\s+)", r"\1DESC_TIENDA NOT LIKE '%CENTRO%DISTRIB%' AND ", sql, count=1)
+    else:
+        # Insertar WHERE antes de GROUP/ORDER si existen, o al final
+        parts = re.split(r"(?i)(group by|order by)", sql, maxsplit=1)
+        if len(parts) == 3:
+            before, keyword, after = parts
+            return before + " WHERE DESC_TIENDA NOT LIKE '%CENTRO%DISTRIB%' " + keyword + after
+        else:
+            return sql + " WHERE DESC_TIENDA NOT LIKE '%CENTRO%DISTRIB%'"
 
 def mapear_desc_tipo_es_en(texto: str) -> str:
     """
@@ -1223,7 +1247,8 @@ if pregunta:
 
         # 4) Forzar DISTINCT si corresponde
         sql_query = forzar_distinct_canal_si_corresponde(pregunta_con_contexto, sql_query)
-
+        # 4b) Forzar exclusión de Centros de Distribución
+        sql_query = forzar_excluir_centros_distribucion(sql_query)
         # 5) Preparar guardado en cache
         embedding = obtener_embedding(pregunta)
         guardar_en_cache_pending = embedding if embedding else None
