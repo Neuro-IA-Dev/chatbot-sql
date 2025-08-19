@@ -1249,11 +1249,16 @@ def _insertar_predicado(sql: str, predicado: str) -> str:
 
 
 def asegurar_exclusion_servicios(sql: str) -> str:
-    """
-    Excluye explícitamente bolsas, fletes y despacho, y evita 'PACKING BAGS' como tipo.
-    Úsalo cuando la intención es de PRODUCTOS/ARTÍCULOS (no servicios).
-    """
-    if not sql or "from ventas" not in sql.lower():
+    if not sql or not isinstance(sql, str):
+        return sql
+    s = sql
+    s = re.sub(r"(?i)UPPER\(\s*DESC_ARTICULO\s*\)\s+LIKE\s+'FLETE%'", 
+               "UPPER(DESC_ARTICULO) NOT LIKE 'FLETE%'", s)
+    s = re.sub(r"(?i)UPPER\(\s*DESC_ARTICULO\s*\)\s+LIKE\s+'DESPACHO A DOMICILIO'",
+               "UPPER(DESC_ARTICULO) NOT LIKE 'DESPACHO A DOMICILIO'", s)
+    s = re.sub(r"(?i)UPPER\(\s*DESC_ARTICULO\s*\)\s+LIKE\s+'%BOLSA%'", 
+               "UPPER(DESC_ARTICULO) NOT LIKE '%BOLSA%'", s)
+    return s
 
 
 def _habla_de_pais(texto: str) -> bool:
