@@ -717,6 +717,21 @@ def actualizar_contexto(df: pd.DataFrame):
         tiendas = [t for t in tiendas if t and not es_centro_distribucion(t)]
         if tiendas:
             st.session_state.setdefault("contexto", {})["DESC_TIENDA_LIST"] = tiendas
+            # Guardar LISTA de artículos (únicos) para poder referirnos a "esos/estos artículos"
+    if "DESC_ARTICULO" in df.columns:
+        articulos = (
+            df["DESC_ARTICULO"]
+            .dropna()
+            .astype(str)
+            .map(str.strip)
+            .unique()
+            .tolist()
+        )
+        # Evita strings vacíos y servicios si quisieras (opcional)
+        articulos = [a for a in articulos if a]
+        if articulos:
+            # Limita a 50 para evitar queries gigantes
+            st.session_state.setdefault("contexto", {})["DESC_ARTICULO_LIST"] = articulos[:50]
     articulo_capturado = False
 
     for canonico, posibles in alias.items():
