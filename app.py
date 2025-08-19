@@ -785,7 +785,7 @@ def buscar_sql_en_cache(pregunta_nueva, umbral_similitud=0.94):  # antes 0.90
                 if _should_reuse_cached_sql(pregunta_nueva, mejor_sql):
                     return mejor_sql
                 # Si no cumple, no reutilizamos caché y forzamos nueva generación
-                return None
+            return None
 
 
 # ==== DESAMBIGUACIÓN: detectores y UI ========================================
