@@ -234,8 +234,14 @@ def forzar_distinct_pais_si_corresponde(pregunta, sql_generado):
     return sql_generado
     
 def aplicar_formato_monetario(df: pd.DataFrame) -> pd.DataFrame:
-    """Formatea columnas monetarias: 7.765.093,83 y agrega sufijo de moneda.
-       Detecta columnas por nombre 'dinero-like' y por tipo numérico.
+    """
+    Formatea columnas monetarias con separador europeo (7.765.093,83) y agrega sufijo de moneda.
+    Evita aplicar formato a conteos (COUNT) y totales que no sean de dinero.
+    Reglas:
+      - Detecta columnas numéricas cuyo NOMBRE sugiera dinero (ingresos, costos, precio, etc.).
+      - Excluye columnas de unidades, cantidades, conteos, tiendas, clientes, país, canal, etc.
+      - Si todos los valores son enteros (probable COUNT), NO se considera dinero.
+      - Si existe columna MONEDA, usa su valor por fila; si no, usa la última moneda elegida si es única.
     """
     if df is None or df.empty:
         return df
@@ -245,15 +251,43 @@ def aplicar_formato_monetario(df: pd.DataFrame) -> pd.DataFrame:
     # 1) Candidatas por tipo numérico
     numeric_cols = [c for c in df2.columns if pd.api.types.is_numeric_dtype(df2[c])]
 
-    # 2) Heurística por nombre: incluye términos de dinero y excluye unidades/cantidades
-    include_pat = re.compile(r"(ingres|venta|cost|margen|gm|precio|importe|neto|bruto|total|valor|ticket)", re.I)
-    exclude_pat = re.compile(r"(unid|cantidad|count|nro|numero)", re.I)
+    if not numeric_cols:
+        return df2
 
-    money_cols = [c for c in numeric_cols if include_pat.search(c) and not exclude_pat.search(c)]
+    # 2) Heurística por nombre de columna
+    #    - quitamos "total" genérico del include para no capturar TOTAL_TIENDA(S), TOTAL_CLIENTES, etc.
+    #    - permitimos "total" solo si viene acompañado de palabras de dinero (total_ingresos, total_costos, etc.)
+    include_pat = re.compile(
+        r"(ingres|venta|cost|margen|gm|precio|importe|neto|bruto|valor|ticket|^total_(ingres|venta|cost|margen|gm|precio|importe|neto|bruto|valor|ticket))",
+        re.I,
+    )
+    exclude_pat = re.compile(
+        r"(unid|cantidad|count|conteo|nro|numero|tienda|cliente|pais|pa[ií]s|canal|art[ií]culo|articulo|sku)",
+        re.I,
+    )
+
+    def _series_is_integer_like(s: pd.Series) -> bool:
+        """True si todos los valores no nulos son enteros (p.ej. conteos)."""
+        vals = s.dropna().astype(float).values
+        if vals.size == 0:
+            return False
+        return np.all(np.mod(vals, 1) == 0)
+
+    money_cols = []
+    for c in numeric_cols:
+        name = str(c)
+        if include_pat.search(name) and not exclude_pat.search(name):
+            # Evitar formatear columnas que parecen conteos
+            if _series_is_integer_like(df2[c]):
+                continue
+            money_cols.append(c)
+
     if not money_cols:
         return df2
 
-    # 3) Sufijo de moneda: si existe MONEDA por fila, úsala; si no, usa la última elegida (si es única)
+    # 3) Determinar sufijo de moneda
+    #    - Si existe columna MONEDA, se usa por fila
+    #    - Si no, usa la última moneda confirmada si es única
     last = st.session_state.get("clarif_moneda_last")
     single_suffix = None
     if isinstance(last, list) and len(last) == 1:
@@ -261,6 +295,7 @@ def aplicar_formato_monetario(df: pd.DataFrame) -> pd.DataFrame:
     elif isinstance(last, str):
         single_suffix = last
 
+    # 4) Aplicar formato
     if "MONEDA" in df2.columns:
         for c in money_cols:
             df2[c] = df2.apply(
@@ -272,6 +307,7 @@ def aplicar_formato_monetario(df: pd.DataFrame) -> pd.DataFrame:
             if single_suffix:
                 df2[c] = df2[c].map(lambda x: f"{_fmt_money(x)} {single_suffix}" if pd.notnull(x) else x)
             else:
+                # sin información de moneda → solo formato numérico
                 df2[c] = df2[c].map(lambda x: _fmt_money(x) if pd.notnull(x) else x)
 
     return df2
