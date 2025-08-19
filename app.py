@@ -49,6 +49,48 @@ _HELP_TRIGGERS_RE = re.compile(
     r"\b(qu[eé]\s+puedo\s+preguntarte|ayuda|qu[eé]\s+sabes\s+hacer|help)\b",
     re.IGNORECASE
 )
+def _sanear_puntos_y_comas(sql: str) -> str:
+    """
+    Arregla ';' mal ubicados en una única sentencia SQL:
+      - '; AND'  -> ' AND'
+      - '; GROUP/ORDER/LIMIT' -> ' GROUP/ORDER/LIMIT'
+      - '; WHERE' -> ' WHERE'
+      - ';;' -> ';'
+      - Elimina ';' intermedios que no estén al final de la sentencia.
+    No cambia el contenido lógico del SQL.
+    """
+    if not sql or not isinstance(sql, str):
+        return sql
+
+    # Normaliza espacios
+    s = sql
+
+    # 1) Casos típicos: '; AND ...'
+    s = re.sub(r";\s+(?=AND\b)", " ", s, flags=re.IGNORECASE)
+
+    # 2) '; GROUP BY / ORDER BY / LIMIT'
+    s = re.sub(r";\s+(?=(GROUP\s+BY|ORDER\s+BY|LIMIT)\b)", " ", s, flags=re.IGNORECASE)
+
+    # 3) '; WHERE'
+    s = re.sub(r";\s+(?=WHERE\b)", " ", s, flags=re.IGNORECASE)
+
+    # 4) Doble punto y coma ';;' -> ';'
+    s = re.sub(r";\s*;+", ";", s)
+
+    # 5) Si quedó algún ';' en medio antes del final de la sentencia,
+    #    quítalo (conserva el ';' final si existe)
+    #    - separa por salto de línea para no romper formateo
+    lines = s.splitlines()
+    for i, line in enumerate(lines):
+        if i < len(lines) - 1:
+            # elimina ';' al final de líneas intermedias
+            lines[i] = re.sub(r";\s*$", "", line)
+    s = "\n".join(lines)
+
+    # 6) Limpieza de espacios redundantes
+    s = re.sub(r"\s+\n", "\n", s).strip()
+
+    return s
 
 def render_help_capacidades():
     st.markdown("## 🤖 ¿Qué puedes preguntarme?")
@@ -1310,6 +1352,8 @@ if pregunta:
         sql_query = forzar_distinct_canal_si_corresponde(pregunta_con_contexto, sql_query)
         # 4b) Forzar exclusión de Centros de Distribución
         sql_query = forzar_excluir_centros_distribucion(sql_query)
+        # 4c) 🔧 Saneador de ';' mal puestos
+        sql_query = _sanear_puntos_y_comas(sql_query)
         # 5) Preparar guardado en cache
         embedding = obtener_embedding(pregunta)
         guardar_en_cache_pending = embedding if embedding else None
