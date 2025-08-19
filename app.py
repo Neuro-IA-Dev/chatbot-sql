@@ -171,7 +171,7 @@ Puedo entender preguntas de **ventas retail** y generar la **consulta SQL** adec
   ((SUM(INGRESOS) - SUM(COSTOS)) / NULLIF(SUM(INGRESOS),0)) * 100  AS GM_PORCENTAJE
 - No uses la columna MARGEN (no existe). Siempre deriva a partir de INGRESOS y COSTOS.
 - Agrupa por las dimensiones solicitadas y aplica MONEDA solo si se trata de métricas monetarias (para GM% se puede filtrar MONEDA=’USD’ para normalizar).
--Importe no existe, siempre considerar ingreso. 
+-Importe no existe, siempre considerar ingresos. 
 - **Campos descriptivos:** “tienda, marca, canal, producto…” ⇒ `DESC_*` (no `COD_*`).  
 - **Fechas:** `FECHA_DOCUMENTO` **formato `YYYYMMDD` sin guiones**.  
 - **Unidades negativas:** son devoluciones ⇒ si se habla de ventas o “baratos”, **`UNIDADES > 0`**.  
@@ -374,7 +374,7 @@ def _es_intencion_producto(pregunta: str) -> bool:
 def forzar_articulo_y_excluir_bolsas(pregunta: str, sql: str) -> str:
     """
     Si la intención es producto/artículo:
-      - Asegura DESC_TIPOARTICULO='MODE'
+      - Asegura COD_TIPOARTICULO='MODE'
       - Corrige si el LLM puso DESC_TIPOARTICULO='PACKING BAGS'
       - Excluye por DESC_ARTICULO: %BOLSA%, DESPACHO A DOMICILIO, FLETE%
       - Excluye PACKING BAGS por DESC_TIPO
@@ -392,8 +392,8 @@ def forzar_articulo_y_excluir_bolsas(pregunta: str, sql: str) -> str:
     )
 
     # Asegurar artículo
-    if "desc_tipoarticulo = 'mode'" not in s.lower():
-        s = _inyectar_predicado_where(s, "DESC_TIPOARTICULO = 'MODE'")
+    if _tipoarticulo = 'mode'" not in s.lower():
+        s = _inyectar_predicado_where(s, "COD_TIPOARTICULO = 'MODE'")
 
     # Excluir por descripción (bolsas/servicios)
     excl_desc = [
