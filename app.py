@@ -91,6 +91,30 @@ def _sanear_puntos_y_comas(sql: str) -> str:
     s = re.sub(r"\s+\n", "\n", s).strip()
 
     return s
+def normalizar_importe_sql(sql: str) -> str:
+    """Reemplaza referencias a IMPORTE por INGRESOS (la tabla no tiene IMPORTE)."""
+    if not sql or not isinstance(sql, str):
+        return sql
+    s = sql
+    # SUM/AVG/MIN/MAX sobre IMPORTE
+    s = re.sub(r"(?i)\bSUM\s*\(\s*IMPORTE\s*\)", "SUM(INGRESOS)", s)
+    s = re.sub(r"(?i)\bAVG\s*\(\s*IMPORTE\s*\)", "AVG(INGRESOS)", s)
+    s = re.sub(r"(?i)\bMIN\s*\(\s*IMPORTE\s*\)", "MIN(INGRESOS)", s)
+    s = re.sub(r"(?i)\bMAX\s*\(\s*IMPORTE\s*\)", "MAX(INGRESOS)", s)
+    # IMPORTE "a secas"
+    s = re.sub(r"(?i)\bIMPORTE\b", "INGRESOS", s)
+    return s
+def asegurar_exclusion_servicios(sql: str) -> str:
+    if not sql or not isinstance(sql, str):
+        return sql
+    s = sql
+    s = re.sub(r"(?i)UPPER\(\s*DESC_ARTICULO\s*\)\s+LIKE\s+'FLETE%'", 
+               "UPPER(DESC_ARTICULO) NOT LIKE 'FLETE%'", s)
+    s = re.sub(r"(?i)UPPER\(\s*DESC_ARTICULO\s*\)\s+LIKE\s+'DESPACHO A DOMICILIO'",
+               "UPPER(DESC_ARTICULO) NOT LIKE 'DESPACHO A DOMICILIO'", s)
+    s = re.sub(r"(?i)UPPER\(\s*DESC_ARTICULO\s*\)\s+LIKE\s+'%BOLSA%'", 
+               "UPPER(DESC_ARTICULO) NOT LIKE '%BOLSA%'", s)
+    return s
 
 def render_help_capacidades():
     st.markdown("## 🤖 ¿Qué puedes preguntarme?")
@@ -133,6 +157,16 @@ Puedo entender preguntas de **ventas retail** y generar la **consulta SQL** adec
 # MÁRGENES (cuando no existe columna MARGEN)
 - Si piden **margen** en monto (margen bruto / utilidad), calcula:
   (SUM(INGRESOS) - SUM(COSTOS))  AS MARGEN
+  -# MONTOS / INGRESOS (no existe columna IMPORTE)
+- La tabla NO tiene IMPORTE. Si aparecen términos como: "importe", "monto", "total", "facturación",
+  "revenue", "sales", "ventas (monto)", "valor", "ticket", usa SIEMPRE la columna INGRESOS.
+  Ejemplos:
+  • SUM(INGRESOS) AS TOTAL_MONTO
+  • AVG(INGRESOS) AS TICKET_PROMEDIO
+- Para GM% (margen %): ((SUM(INGRESOS) - SUM(COSTOS)) / NULLIF(SUM(INGRESOS),0)) * 100 AS GM_PORCENTAJE.
+- No uses la columna MARGEN ni IMPORTE (no existen).
+- Solo filtra MONEDA cuando la métrica sea monetaria; para conteos/unidades no agregues MONEDA.
+
 - Si piden **GM% / margen porcentual** (señales: "gm%", "%", "porcentaje"):
   ((SUM(INGRESOS) - SUM(COSTOS)) / NULLIF(SUM(INGRESOS),0)) * 100  AS GM_PORCENTAJE
 - No uses la columna MARGEN (no existe). Siempre deriva a partir de INGRESOS y COSTOS.
@@ -1508,6 +1542,10 @@ if pregunta:
         # ➜ NUEVO: si la intención es producto/artículo, restringe a MODE y excluye bolsas/fletes/despachos/PACKING BAGS
         sql_query = forzar_articulo_y_excluir_bolsas(pregunta_con_contexto, sql_query)
         # 4c) 🔧 Saneador de ';' mal puestos
+        # 👇 nuevos seguros
+        sql_query = normalizar_margen_sql(sql_query)
+        sql_query = normalizar_importe_sql(sql_query)
+        sql_query = asegurar_exclusion_servicios(sql_query)  # opcional
         sql_query = _sanear_puntos_y_comas(sql_query)
         # 5) Preparar guardado en cache
         embedding = obtener_embedding(pregunta)
