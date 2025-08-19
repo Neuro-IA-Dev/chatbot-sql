@@ -571,7 +571,7 @@ sql_prompt = PromptTemplate(
 - **Artículo** ⇢ `DESC_TIPOARTICULO='MODE'`.
 - **Servicio / NO Artículo** ⇢ `DESC_TIPOARTICULO<>'MODE'` o descripciones de servicio.
 - **IMPORTANTE (producto/artículo)**: cuando la intención es **producto/artículo**:
-  1) **Restringe** a `DESC_TIPOARTICULO='MODE'`.
+  1) **Restringe** a `COD_TIPOARTICULO='MODE'`.
   2) **Excluye** explícitamente **bolsas/packing** y servicios:
      - `UPPER(DESC_ARTICULO) NOT LIKE '%BOLSA%'`
      - `UPPER(DESC_ARTICULO) NOT LIKE 'DESPACHO A DOMICILIO'`
