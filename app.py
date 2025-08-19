@@ -709,7 +709,7 @@ def guardar_en_cache(pregunta, sql_generado, embedding):
     except Exception as e:
         st.warning(f"❌ No se guardó en semantic_cache: {e}")
 
-def buscar_sql_en_cache(pregunta_nueva, umbral_similitud=0.90):
+def buscar_sql_en_cache(pregunta_nueva, umbral_similitud=0.82):  # antes 0.90
     embedding_nuevo = obtener_embedding(pregunta_nueva)
     if embedding_nuevo is None:
         return None
@@ -726,11 +726,22 @@ def buscar_sql_en_cache(pregunta_nueva, umbral_similitud=0.90):
         conn.close()
 
         vec_nuevo = np.array(embedding_nuevo)
+        n_nuevo = np.linalg.norm(vec_nuevo)
+        if n_nuevo == 0:
+            return None
+
+        mejor_sql, mejor_sim = None, -1.0
         for row in rows:
             vec_guardado = np.array(json.loads(row["embedding"]))
-            similitud = np.dot(vec_nuevo, vec_guardado) / (np.linalg.norm(vec_nuevo) * np.linalg.norm(vec_guardado))
-            if similitud >= umbral_similitud:
-                return row["sql_generado"]
+            n_guardado = np.linalg.norm(vec_guardado)
+            if n_guardado == 0:
+                continue
+            similitud = float(np.dot(vec_nuevo, vec_guardado) / (n_nuevo * n_guardado))
+            if similitud > mejor_sim:
+                mejor_sim, mejor_sql = similitud, row["sql_generado"]
+
+        if mejor_sim >= umbral_similitud:
+            return mejor_sql
     except Exception as e:
         st.warning(f"❌ Error buscando en cache: {e}")
     return None
@@ -931,7 +942,7 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
 
     # Monedas permitidas según regla
     if es_agrupado or len(paises_texto) != 1:
-        monedas_permitidas = ["USD"]
+        monedas_permitidas = ["USD", "CLP", "PEN", "BOB"]   # <-- NUEVO
     elif len(paises_texto) == 1:
         local = _LOCAL_CURRENCY_BY_SOC[list(paises_texto)[0]]
         monedas_permitidas = ["USD", local]
@@ -1155,6 +1166,12 @@ if pregunta and isinstance(sql_query, str) and sql_query.strip():
 
                         if dfs_mostrados == 1:
                             actualizar_contexto(df_sub)
+                     # Guarda en caché automáticamente si hubo al menos 1 dataframe mostrado
+try:
+    if guardar_en_cache_pending and dfs_mostrados > 0:
+        guardar_en_cache(pregunta, sql_query, guardar_en_cache_pending)
+except Exception as _e:
+    st.warning(f"⚠️ No se pudo guardar en cache automáticamente: {_e}")
 
                 conn.close()
                 resultado = ("Consulta ejecutada sin resultados tabulares."
