@@ -1167,11 +1167,12 @@ if pregunta and isinstance(sql_query, str) and sql_query.strip():
                         if dfs_mostrados == 1:
                             actualizar_contexto(df_sub)
                      # Guarda en caché automáticamente si hubo al menos 1 dataframe mostrado
-try:
-    if guardar_en_cache_pending and dfs_mostrados > 0:
-        guardar_en_cache(pregunta, sql_query, guardar_en_cache_pending)
-except Exception as _e:
-    st.warning(f"⚠️ No se pudo guardar en cache automáticamente: {_e}")
+    try:
+        if guardar_en_cache_pending and dfs_mostrados > 0:
+            guardar_en_cache(pregunta, sql_query, guardar_en_cache_pending)
+    except Exception as _e:
+        st.warning(f"⚠️ No se pudo guardar en cache automáticamente: {_e}")
+
 
                 conn.close()
                 resultado = ("Consulta ejecutada sin resultados tabulares."
