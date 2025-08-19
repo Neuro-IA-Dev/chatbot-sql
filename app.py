@@ -1083,8 +1083,6 @@ def _tiene_moneda(texto: str) -> bool:
 
 def manejar_aclaracion(pregunta: str) -> Optional[str]:
     flags = _necesita_aclaracion(pregunta)
-        # Sufijo único para las keys de los widgets de aclaración
-    _SUF = str(abs(hash(pregunta)) % 100000)
     if not any(flags.values()):
         return None
 
@@ -1129,7 +1127,7 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
         st.subheader("Rango de fechas")
         hoy = _dt.date.today()
         desde_def = hoy - _dt.timedelta(days=30)
-        val = st.date_input("Selecciona el rango", value=(desde_def, hoy), key=f"k_rango_fechas_{_SUF}")
+        val = st.date_input("Selecciona el rango", value=(desde_def, hoy), key="k_rango_fechas")
         if isinstance(val, tuple) and len(val) == 2:
             d, h = val
         else:
@@ -1159,7 +1157,7 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
     if flags["tienda_vs_cd"]:
         st.subheader("Tipo de ubicación")
         st.session_state["clarif_excluir_cd"] = st.checkbox(
-            "Excluir Centros de Distribución (CD)", value=True, key="k_excluir_cd_{_SUF}",
+            "Excluir Centros de Distribución (CD)", value=True, key="k_excluir_cd",
         )
 
     # Confirmar (¡sólo un botón con esta key!)
