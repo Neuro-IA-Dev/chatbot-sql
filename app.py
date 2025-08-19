@@ -755,23 +755,23 @@ sql_prompt = PromptTemplate(
   `CASE SOCIEDAD_CO WHEN '1000' THEN 'Chile' WHEN '2000' THEN 'Perú' WHEN '3000' THEN 'Bolivia' END AS PAIS`.
 
 # DEFINICIONES DE ARTÍCULO VS SERVICIO
-- **Artículo** ⇢ `DESC_TIPOARTICULO='MODE'`.
-- **Servicio / NO Artículo** ⇢ `DESC_TIPOARTICULO<>'MODE'` o descripciones de servicio.
+- **Artículo** ⇢ `COD_TIPOARTICULO='MODE'`.
+- **Servicio / NO Artículo** ⇢ `COD_TIPOARTICULO<>'MODE'` o descripciones de servicio.
 - **IMPORTANTE (producto/artículo)**: cuando la intención es **producto/artículo**:
   1) **Restringe** a `COD_TIPOARTICULO='MODE'`.
   2) **Excluye** explícitamente **bolsas/packing** y servicios:
      - `UPPER(DESC_ARTICULO) NOT LIKE '%BOLSA%'`
      - `UPPER(DESC_ARTICULO) NOT LIKE 'DESPACHO A DOMICILIO'`
      - `UPPER(DESC_ARTICULO) NOT LIKE 'FLETE%'`
-   - Artículo ⇢ DESC_TIPOARTICULO='MODE'. Servicio ⇢ DESC_TIPOARTICULO<>'MODE'.
+   - Artículo ⇢ CODE_TIPOARTICULO='MODE'. Servicio ⇢ CODE_TIPOARTICULO<>'MODE'.
 - PACKING BAGS es un valor de DESC_TIPO (no de DESC_TIPOARTICULO). 
   Cuando la intención es **producto/artículo**:
-  • Forzar DESC_TIPOARTICULO='MODE'
+  • Forzar COD_TIPOARTICULO='MODE'
   • Excluir bolsas/servicios: 
     UPPER(DESC_ARTICULO) NOT LIKE '%BOLSA%' 
     AND UPPER(DESC_ARTICULO) NOT LIKE 'DESPACHO A DOMICILIO' 
     AND UPPER(DESC_ARTICULO) NOT LIKE 'FLETE%'
-  • Excluir PACKING BAGS por tipo: (DESC_TIPO IS NULL OR UPPER(DESC_TIPO) <> 'PACKING BAGS')
+  • Excluir PACKING BAGS por tipo: (UPPER(DESC_TIPO) <> 'PACKING BAGS')
 - Solo incluir bolsas/packing/fletes/despachos si el usuario lo pide explícitamente.
 
 - Solo **incluye** bolsas/packing/fletes/ despachos/cualquier servicio si el usuario lo pide **explícitamente** (“bolsas”, “packing bags”, “flete”, “despacho”, “servicio”).
