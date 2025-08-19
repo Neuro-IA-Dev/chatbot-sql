@@ -640,11 +640,12 @@ Packing Bags, Pants, Patches, Pines, Shirts, Sin Tipo, Sweaters, Sweatshirts, Ta
 úsalo SOLO como filtro: DESC_TIPO LIKE '%<valor>%' (case-insensitive) y no como columna a mostrar.
 - Si piden "más vendido / top / ranking / mejor vendido", muestra y agrupa por DESC_ARTICULO
   (y por atributos extra si los piden: COD_MODELO, TALLA, LARGO, COD_COLOR, etc.),
-  con UNIDADES > 0, ORDER BY SUM(UNIDADES) DESC y LIMIT 1 si corresponde.
+  con UNIDADES > 0, ORDER BY SUM(UNIDADES) DESC y LIMIT 1 si corresponde excepto que sea por una dimension mas grande ejemplo
+  "Cual es la promocion mas vendida por tienda va sin limit=1 para mostrar todas las tiendas.
 - Si piden "montos" por ese tipo, usa SUM(INGRESOS) respetando MONEDA, pero los listados deben
   seguir mostrando DESC_ARTICULO (no DESC_TIPO) salvo que explícitamente pidan "por tipo".
 - Sólo cuando la intención sea un resumen por tipo (ej. "ventas por tipo"), agrupa por DESC_TIPO.
-
+Promociones es donde PROMO<>"0.00"
 23. Si un pronombre (ej. "ese pin", "ese artículo", "ese producto") se resolvió a una
     descripción concreta (de contexto) y corresponde a un ARTÍCULO, el filtro DEBE ser
     DESC_ARTICULO LIKE '%<valor>%' con UNIDADES > 0, y NO se debe usar DESC_TIPO.
