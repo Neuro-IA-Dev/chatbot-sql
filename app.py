@@ -143,28 +143,46 @@ EQUIV_DESC_TIPO_ES_EN = {
 }
 def forzar_excluir_centros_distribucion(sql: str) -> str:
     """
-    Si el SQL generado tiene FROM VENTAS pero no excluye CDs,
-    añade filtro para que no aparezcan en los resultados de tiendas.
+    Si el SQL tiene FROM VENTAS y no excluye CDs, agrega el filtro para que
+    no aparezcan en resultados de tiendas.
+    Evita crear un segundo WHERE; si ya hay WHERE, inserta un AND antes de GROUP/ORDER/LIMIT.
     """
-    if not sql or "from ventas" not in sql.lower():
+    if not sql:
         return sql
 
-    s = sql.lower()
-    # Ya excluye centros?
-    if "centro distribucion" in s:
+    s_low = sql.lower()
+    if "from ventas" not in s_low:
         return sql
 
-    # Detectar si ya hay WHERE
-    if " where " in s:
-        return re.sub(r"(?i)(where\s+)", r"\1DESC_TIENDA NOT LIKE '%CENTRO%DISTRIB%' AND ", sql, count=1)
-    else:
-        # Insertar WHERE antes de GROUP/ORDER si existen, o al final
-        parts = re.split(r"(?i)(group by|order by)", sql, maxsplit=1)
-        if len(parts) == 3:
-            before, keyword, after = parts
-            return before + " WHERE DESC_TIENDA NOT LIKE '%CENTRO%DISTRIB%' " + keyword + after
+    # Ya excluye CDs explícita o implícitamente
+    if re.search(r"(?i)desc_tienda\s+not\s+like\s+'%centro%distrib%'", sql):
+        return sql
+
+    # Regex para detectar sección que sigue a la cláusula WHERE
+    tail_re = re.compile(r"(?i)\b(group\s+by|order\s+by|limit)\b")
+
+    if re.search(r"(?i)\bwhere\b", sql):
+        # Ya hay WHERE: insertar "AND ..." antes de GROUP/ORDER/LIMIT (si existen) o al final
+        m = tail_re.search(sql)
+        if m:
+            idx = m.start()
+            before = sql[:idx].rstrip()
+            after = sql[idx:]
+            # si el before ya tiene WHERE, agregamos AND al final del predicado
+            return before + " AND DESC_TIENDA NOT LIKE '%CENTRO%DISTRIB%' " + after
         else:
-            return sql + " WHERE DESC_TIENDA NOT LIKE '%CENTRO%DISTRIB%'"
+            # no hay GROUP/ORDER/LIMIT; agregamos al final del SQL
+            return sql.rstrip() + " AND DESC_TIENDA NOT LIKE '%CENTRO%DISTRIB%'"
+    else:
+        # No hay WHERE: lo insertamos antes de GROUP/ORDER/LIMIT o al final
+        m = tail_re.search(sql)
+        if m:
+            idx = m.start()
+            before = sql[:idx].rstrip()
+            after = sql[idx:]
+            return before + " WHERE DESC_TIENDA NOT LIKE '%CENTRO%DISTRIB%' " + after
+        else:
+            return sql.rstrip() + " WHERE DESC_TIENDA NOT LIKE '%CENTRO%DISTRIB%'"
 
 def mapear_desc_tipo_es_en(texto: str) -> str:
     """
