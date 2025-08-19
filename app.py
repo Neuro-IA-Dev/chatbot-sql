@@ -645,6 +645,11 @@ referencias = {
     "ese articulo": ["DESC_ARTICULO", "DESC_TIPO"],
 }
 referencias.update({
+    "este artículo": "DESC_ARTICULO",
+    "este articulo": "DESC_ARTICULO",
+    "este producto": "DESC_ARTICULO",
+})
+referencias.update({
     "ese tipo": "DESC_TIPO",
     "ese categoria de tipo": "DESC_TIPO",
     "esa tienda": "DESC_TIENDA",
@@ -656,7 +661,30 @@ def aplicar_contexto(pregunta: str) -> str:
     pregunta_mod = pregunta
     lower_q = pregunta.lower()
     st.session_state["__last_ref_replacement__"] = None
+    # --- manejo especial: "esos/estos artículos|productos|pines" -> usar lista previa ---
+    if ("esos articulos" in lower_q or "estos articulos" in lower_q or
+        "esos artículos" in lower_q or "estos artículos" in lower_q or
+        "esos productos" in lower_q or "estos productos" in lower_q or
+        "esos pines" in lower_q or "estos pines" in lower_q) and \
+        "DESC_ARTICULO_LIST" in st.session_state.get("contexto", {}):
+        
+        lista = st.session_state["contexto"]["DESC_ARTICULO_LIST"]
+        # Escapa comillas simples para SQL
+        lista_sql = "', '".join(s.replace("'", "''") for s in lista)
 
+        # Anotación para guiar al generador SQL:
+        guia_in = (" (Filtrar con DESC_ARTICULO IN ('" + lista_sql + "')" 
+                   " y UNIDADES > 0. No uses DESC_TIPO para este filtro.)")
+
+        # Normaliza las frases al texto guía
+        pregunta_mod = re.sub(r"(es[eo]s)\s+art[ií]culos", "los artículos indicados", pregunta_mod, flags=re.I)
+        pregunta_mod = re.sub(r"(es[eo]s)\s+productos", "los artículos indicados", pregunta_mod, flags=re.I)
+        pregunta_mod = re.sub(r"(es[eo]s)\s+pines", "los artículos indicados", pregunta_mod, flags=re.I)
+
+        pregunta_mod += guia_in
+        st.session_state["__last_ref_replacement__"] = "DESC_ARTICULO_LIST"
+        st.session_state["__last_ref_value__"] = lista
+        return pregunta_mod
     # --- manejo especial: "esas/estas tiendas" -> usar lista previa ---
     if ("esas tiendas" in lower_q or "estas tiendas" in lower_q) and \
        "DESC_TIENDA_LIST" in st.session_state.get("contexto", {}):
