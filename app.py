@@ -708,6 +708,46 @@ def guardar_en_cache(pregunta, sql_generado, embedding):
         conn.close()
     except Exception as e:
         st.warning(f"❌ No se guardó en semantic_cache: {e}")
+# --- Reglas ligeras para validar reutilización del SQL cacheado ---
+
+_NEED_DESC_TIENDA_RE = re.compile(r"\b(descripci[oó]n|por\s+descripci[oó]n|tienda[s]?\s+por)\b", re.I)
+_NEED_PAIS_RE = re.compile(r"\bpa[ií]s(es)?\b", re.I)
+_NEED_CANAL_RE = re.compile(r"\bcanal(es)?\b", re.I)
+_NEED_GROUPING_RE = re.compile(r"\bpor\b", re.I)  # "por descripción/país/canal" suele implicar agrupación
+
+def _sql_has_col(sql: str, col_patterns: list[str]) -> bool:
+    s = sql.lower()
+    return any(p.lower() in s for p in col_patterns)
+
+def _sql_has_pais(sql: str) -> bool:
+    s = sql.lower()
+    # aceptar cualquiera de estas señales de país: CASE SOCIEDAD_CO ... AS PAIS, alias PAIS, o la propia SOCIEDAD_CO
+    return (" as pais" in s) or ("case sociedad_co" in s) or ("sociedad_co" in s)
+
+def _should_reuse_cached_sql(pregunta: str, sql: str) -> bool:
+    """ Devuelve True si el SQL cacheado satisface la estructura que insinúa la nueva pregunta. """
+    q = pregunta or ""
+    # 1) ¿La pregunta pide desglose "por ..." (agrupación)?
+    needs_grouping = bool(_NEED_GROUPING_RE.search(q))
+    if needs_grouping and ("group by" not in sql.lower()):
+        return False
+
+    # 2) ¿Pide descripción? (en este contexto mapeamos a tiendas por descripción)
+    needs_desc = bool(_NEED_DESC_TIENDA_RE.search(q))
+    if needs_desc and not _sql_has_col(sql, ["desc_tienda"]):
+        return False
+
+    # 3) ¿Pide país?
+    needs_pais = bool(_NEED_PAIS_RE.search(q))
+    if needs_pais and not _sql_has_pais(sql):
+        return False
+
+    # 4) ¿Pide canal?
+    needs_canal = bool(_NEED_CANAL_RE.search(q))
+    if needs_canal and not _sql_has_col(sql, ["desc_canal"]):
+        return False
+
+    return True
 
 def buscar_sql_en_cache(pregunta_nueva, umbral_similitud=0.94):  # antes 0.90
     embedding_nuevo = obtener_embedding(pregunta_nueva)
@@ -740,11 +780,13 @@ def buscar_sql_en_cache(pregunta_nueva, umbral_similitud=0.94):  # antes 0.90
             if similitud > mejor_sim:
                 mejor_sim, mejor_sql = similitud, row["sql_generado"]
 
-        if mejor_sim >= umbral_similitud:
+    if mejor_sim >= umbral_similitud:
+        # ✅ Validación adicional: solo reutiliza si el SQL satisface la intención de la nueva pregunta
+        if _should_reuse_cached_sql(pregunta_nueva, mejor_sql):
             return mejor_sql
-    except Exception as e:
-        st.warning(f"❌ Error buscando en cache: {e}")
-    return None
+        # Si no cumple, no reutilizamos caché y forzamos nueva generación
+        return None
+
 
 # ==== DESAMBIGUACIÓN: detectores y UI ========================================
 
