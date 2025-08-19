@@ -225,6 +225,74 @@ def forzar_excluir_centros_distribucion(sql: str) -> str:
             return before + " WHERE DESC_TIENDA NOT LIKE '%CENTRO%DISTRIB%' " + after
         else:
             return sql.rstrip() + " WHERE DESC_TIENDA NOT LIKE '%CENTRO%DISTRIB%'"
+# ==== Helpers de inyección y fixers de marca/artículo ====
+
+# Inserta un predicado respetando si ya hay WHERE o no
+def _inyectar_predicado_where(sql: str, predicado: str) -> str:
+    if not sql:
+        return sql
+    tail_re = re.compile(r"(?i)\b(group\s+by|order\s+by|limit)\b")
+    if re.search(r"(?i)\bwhere\b", sql):
+        m = tail_re.search(sql)
+        if m:
+            i = m.start()
+            return sql[:i].rstrip() + " AND " + predicado + " " + sql[i:]
+        return sql.rstrip() + " AND " + predicado
+    else:
+        m = tail_re.search(sql)
+        if m:
+            i = m.start()
+            return sql[:i].rstrip() + " WHERE " + predicado + " " + sql[i:]
+        return sql.rstrip() + " WHERE " + predicado
+
+# --- MARCAS: LEVI'S / DOCKERS deben ir SIEMPRE por DESC_MARCA ---
+_LEVIS_RE   = re.compile(r"\b(levis|levi[’'´`]?s|levi|lv)\b", re.I)
+_DOCKERS_RE = re.compile(r"\b(dockers|dk)\b", re.I)
+
+def forzar_marca_en_sql_si_corresponde(pregunta: str, sql: str) -> str:
+    if not sql or not pregunta:
+        return sql
+    s_low = sql.lower()
+
+    def _ya_filtra_marca(s: str, marca: str) -> bool:
+        return re.search(rf"(?i)desc_marca\s+like\s+'%{re.escape(marca)}%'", s) is not None
+
+    # LEVI'S / LEVIS / LEVI / LV → DESC_MARCA LIKE '%LEVI%'
+    if _LEVIS_RE.search(pregunta) and not _ya_filtra_marca(s_low, "LEVI"):
+        sql = _inyectar_predicado_where(sql, "DESC_MARCA LIKE '%LEVI%'")
+
+    # DOCKERS / DK → DESC_MARCA LIKE '%DOCKERS%'
+    if _DOCKERS_RE.search(pregunta) and not _ya_filtra_marca(s_low, "DOCKERS"):
+        sql = _inyectar_predicado_where(sql, "DESC_MARCA LIKE '%DOCKERS%'")
+
+    return sql
+
+# --- ARTÍCULO sin bolsas/servicios ni PACKING BAGS ---
+_PRODUCTO_INTENT_RE  = re.compile(r"\b(producto[s]?|art[ií]culo[s]?|sku[s]?)\b", re.I)
+_EXPLICT_SERVICE_RE  = re.compile(r"\b(bolsa[s]?|packing\s*bags?|flete[s]?|despacho(?:\s+a)?\s+domicilio|servicio[s]?)\b", re.I)
+
+def _es_intencion_producto(pregunta: str) -> bool:
+    if not pregunta:
+        return False
+    # Solo si NO piden explícitamente bolsas/packing/fletes/despachos
+    return bool(_PRODUCTO_INTENT_RE.search(pregunta)) and not bool(_EXPLICT_SERVICE_RE.search(pregunta))
+
+def forzar_articulo_y_excluir_bolsas(pregunta: str, sql: str) -> str:
+    """
+    Si la intención es producto/artículo:
+      - Asegura DESC_TIPOARTICULO='MODE'
+      - Corrige si el LLM puso DESC_TIPOARTICULO='PACKING BAGS'
+      - Excluye por DESC_ARTICULO: %BOLSA%, DESPACHO A DOMICILIO, FLETE%
+      - Excluye PACKING BAGS por DESC_TIPO
+    """
+    if not sql or not _es_intencion_producto(pregunta):
+        return sql
+
+    s = sql
+
+    # Corrige errores de TIPOARTICULO mal puesto
+    s = re.sub(
+        r
 
 def mapear_desc_tipo_es_en(texto: str) -> str:
     """
@@ -576,7 +644,17 @@ sql_prompt = PromptTemplate(
      - `UPPER(DESC_ARTICULO) NOT LIKE '%BOLSA%'`
      - `UPPER(DESC_ARTICULO) NOT LIKE 'DESPACHO A DOMICILIO'`
      - `UPPER(DESC_ARTICULO) NOT LIKE 'FLETE%'`
-   
+   - Artículo ⇢ DESC_TIPOARTICULO='MODE'. Servicio ⇢ DESC_TIPOARTICULO<>'MODE'.
+- PACKING BAGS es un valor de DESC_TIPO (no de DESC_TIPOARTICULO). 
+  Cuando la intención es **producto/artículo**:
+  • Forzar DESC_TIPOARTICULO='MODE'
+  • Excluir bolsas/servicios: 
+    UPPER(DESC_ARTICULO) NOT LIKE '%BOLSA%' 
+    AND UPPER(DESC_ARTICULO) NOT LIKE 'DESPACHO A DOMICILIO' 
+    AND UPPER(DESC_ARTICULO) NOT LIKE 'FLETE%'
+  • Excluir PACKING BAGS por tipo: (DESC_TIPO IS NULL OR UPPER(DESC_TIPO) <> 'PACKING BAGS')
+- Solo incluir bolsas/packing/fletes/despachos si el usuario lo pide explícitamente.
+
 - Solo **incluye** bolsas/packing/fletes/ despachos/cualquier servicio si el usuario lo pide **explícitamente** (“bolsas”, “packing bags”, “flete”, “despacho”, “servicio”).
 - Corrección: **“DESPACHO A DOMICILIO” no es artículo** (trátalo como servicio).
 - Marcas:
@@ -1339,6 +1417,11 @@ if pregunta:
         sql_query = forzar_distinct_canal_si_corresponde(pregunta_con_contexto, sql_query)
         # 4b) Forzar exclusión de Centros de Distribución
         sql_query = forzar_excluir_centros_distribucion(sql_query)
+        # ➜ NUEVO: fuerza marca cuando la pregunta menciona LEVI'S/DOCKERS
+        sql_query = forzar_marca_en_sql_si_corresponde(pregunta_con_contexto, sql_query)
+
+        # ➜ NUEVO: si la intención es producto/artículo, restringe a MODE y excluye bolsas/fletes/despachos/PACKING BAGS
+        sql_query = forzar_articulo_y_excluir_bolsas(pregunta_con_contexto, sql_query)
         # 4c) 🔧 Saneador de ';' mal puestos
         sql_query = _sanear_puntos_y_comas(sql_query)
         # 5) Preparar guardado en cache
