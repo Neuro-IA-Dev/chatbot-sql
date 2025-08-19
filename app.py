@@ -84,6 +84,113 @@ def _inyectar_condicion_where(sql: str, condicion: str) -> str:
         start_after_from = m_from.end()
         end_pos = min([p.start() for p in [m_group, m_order, m_limit] if p] + [len(sql)])
         return sql[:end_pos] + f" WHERE ({condicion}) " + sql[end_pos:]
+# === Marca ↔ alias ============================================================
+_BRAND_ALIASES = {
+    "LEVI": [r"levis", r"levi['´`’]s", r"levi\s*s", r"\blv\b"],
+    "DOCKERS": [r"dockers", r"\bdk\b"],
+}
+_BRAND_TO_LIKE = {"LEVI": "LEVI", "DOCKERS": "DOCKERS"}  # cómo debe ir en LIKE
+
+def _detectar_marcas(texto: str) -> set[str]:
+    found = set()
+    t = (texto or "").lower()
+    for brand, pats in _BRAND_ALIASES.items():
+        for p in pats:
+            if re.search(p, t, re.I):
+                found.add(brand)
+                break
+    return found
+
+def _quitar_marca_de_fragmentos_tienda(texto: str) -> str:
+    """
+    Quita prefijos de marca cuando queden pegados al nombre de tienda,
+    p.ej. 'levis tobalaba' -> 'tobalaba', 'dk costanera' -> 'costanera'.
+    No toca casos donde la marca no antecede a una palabra (para no romper marcas sueltas).
+    """
+    t = texto
+    for pats in _BRAND_ALIASES.values():
+        for p in pats:
+            # patrón: marca + uno o más espacios + palabra
+            t = re.sub(rf"\b{p}\s+(\w+)", r"\1", t, flags=re.I)
+    return t
+
+def normalizar_marcas_en_pregunta(pregunta: str) -> tuple[str, list[str]]:
+    """
+    - Detecta marcas (LEVI/DOCKERS) en la pregunta.
+    - Elimina la marca delante de posibles nombres de tienda.
+    - Añade una guía ('Usar DESC_MARCA LIKE ...') para reforzar al LLM.
+    Devuelve (pregunta_normalizada, marcas_detectadas)
+    """
+    marcas = sorted(_detectar_marcas(pregunta))
+    if not marcas:
+        return pregunta, []
+
+    pregunta_sin_prefijo_en_tienda = _quitar_marca_de_fragmentos_tienda(pregunta)
+
+    hints = []
+    for m in marcas:
+        like = _BRAND_TO_LIKE.get(m, m)
+        hints.append(f"Usar DESC_MARCA LIKE '%{like}%'")
+
+    guia = " (" + "; ".join(hints) + ")."
+    return (pregunta_sin_prefijo_en_tienda.strip() + guia), marcas
+
+# === Parche sobre el SQL generado ============================================
+def _sql_inyectar_brand_clause(sql: str, brand_like: str) -> str:
+    """
+    Si el SQL ya tiene WHERE, agrega AND DESC_MARCA LIKE '%brand_like%'.
+    Si no, inserta WHERE DESC_MARCA LIKE ...
+    No reescribe subconsultas; opera por sentencia.
+    """
+    m_where = re.search(r"\bwhere\b", sql, re.I)
+    m_group = re.search(r"\bgroup\s+by\b", sql, re.I)
+    m_order = re.search(r"\border\s+by\b", sql, re.I)
+    m_limit = re.search(r"\blimit\b", sql, re.I)
+    cut = min([p.start() for p in [m_group, m_order, m_limit] if p] + [len(sql)])
+    clause = f" DESC_MARCA LIKE '%{brand_like}%' "
+    if m_where:
+        return sql[:cut] + " AND " + clause + sql[cut:]
+    else:
+        # buscamos FROM para colocar WHERE tras FROM-bloque
+        m_from = re.search(r"\bfrom\b", sql, re.I)
+        if not m_from:  # caso raro, no tocamos
+            return sql
+        return sql[:cut] + " WHERE " + clause + sql[cut:]
+
+def separar_marca_de_tienda_en_sql(sql_texto: str) -> str:
+    """
+    Corrige patrones WHERE DESC_TIENDA LIKE '%(levis|dk|dockers|...) algo%'
+    -> WHERE DESC_TIENDA LIKE '%algo%' AND DESC_MARCA LIKE '%LEVI/DOCKERS%'
+    para cada SELECT del script.
+    """
+    sentencias = [s.strip() for s in sql_texto.split(";") if s.strip()]
+    nuevas = []
+
+    for s in sentencias:
+        if not re.search(r"^\s*select\b", s, re.I):
+            nuevas.append(s)
+            continue
+
+        original = s
+        corrected = s
+
+        # Para cada brand, si aparece dentro del LIKE de tienda, lo retiramos.
+        for brand, pats in _BRAND_ALIASES.items():
+            for p in pats:
+                # Busca ... DESC_TIENDA LIKE '%<marca> <resto>%'
+                regex = rf"(DESC_TIENDA\s+LIKE\s*'%\s*){p}\s+([^%']+)(%')"
+                m = re.search(regex, corrected, re.I)
+                if m:
+                    resto = m.group(2).strip()
+                    corrected = re.sub(regex, rf"\1{resto}\3", corrected, flags=re.I)
+                    corrected = _sql_inyectar_brand_clause(
+                        corrected, _BRAND_TO_LIKE.get(brand, brand)
+                    )
+                    break  # una coincidencia es suficiente por sentencia
+
+        nuevas.append(corrected if corrected else original)
+
+    return ";\n".join(nuevas)
 
 def excluir_bolsas_y_servicios_post_sql(sql_texto: str, pregunta: str) -> str:
     """
@@ -975,6 +1082,7 @@ def _tiene_moneda(texto: str) -> bool:
 
 def manejar_aclaracion(pregunta: str) -> Optional[str]:
     flags = _necesita_aclaracion(pregunta)
+    _SUF = str(abs(hash(pregunta)) % 100000)  # sufijo único por pregunta
     if not any(flags.values()):
         return None
 
@@ -1007,7 +1115,7 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
             "¿En qué moneda(s) quieres ver los montos?",
             options=monedas_permitidas,
             default=sugeridas,
-            key="k_moneda_multi",
+            key=f"k_moneda_multi_{_SUF}",
             help="Si comparas varios países o pides ranking por país, sólo USD."
         )
     else:
@@ -1019,7 +1127,7 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
         st.subheader("Rango de fechas")
         hoy = _dt.date.today()
         desde_def = hoy - _dt.timedelta(days=30)
-        val = st.date_input("Selecciona el rango", value=(desde_def, hoy), key="k_rango_fechas")
+        val = st.date_input("Selecciona el rango", value=(desde_def, hoy), key=f"k_rango_fechas_{_SUF}")
         if isinstance(val, tuple) and len(val) == 2:
             d, h = val
         else:
@@ -1039,7 +1147,7 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
                 "¿Para qué país?",
                 options=["Chile", "Perú", "Bolivia"],
                 horizontal=True,
-                key=f"k_pais_radio_{abs(hash(pregunta))%100000}",
+                key=f"k_pais_radio_{_SUF}",
             )
             pais_code = {"Chile": "1000", "Perú": "2000", "Bolivia": "3000"}[pais_label]
         st.session_state["clarif_pais_code"] = pais_code
@@ -1049,11 +1157,11 @@ def manejar_aclaracion(pregunta: str) -> Optional[str]:
     if flags["tienda_vs_cd"]:
         st.subheader("Tipo de ubicación")
         st.session_state["clarif_excluir_cd"] = st.checkbox(
-            "Excluir Centros de Distribución (CD)", value=True, key="k_excluir_cd",
+            "Excluir Centros de Distribución (CD)", value=True, key=f"k_excluir_cd_{_SUF}",
         )
 
     # Confirmar (¡sólo un botón con esta key!)
-    if st.button("✅ Continuar con estas opciones", type="primary", key="btn_continuar_opciones"):
+    if st.button("✅ Continuar con estas opciones", type="primary", key=f"btn_continuar_opciones_{_SUF}"):
         moneda_sel = st.session_state.get("clarif_moneda")
         d = st.session_state.get("clarif_fecha_desde") if flags["fecha"] else None
         h = st.session_state.get("clarif_fecha_hasta") if flags["fecha"] else None
@@ -1110,9 +1218,17 @@ if pregunta:
     # Guarda el texto ORIGINAL del usuario (antes de cualquier sustitución)
     st.session_state["__last_user_question__"] = pregunta
     st.session_state["__last_ref_replacement__"] = None  # reset de tracking opcional
+    # 👇 Normaliza marcas en la pregunta (LEVI/DOCKERS) y evita que contaminen la tienda
+pregunta, _marcas_detectadas = normalizar_marcas_en_pregunta(pregunta)
+if _marcas_detectadas:
+    st.session_state.setdefault("contexto", {})["DESC_MARCA"] = _BRAND_TO_LIKE.get(
+        _marcas_detectadas[0], _marcas_detectadas[0]
+    )
+
+     # manejar_aclaracion(pregunta)
 
     # Normaliza DESC_TIPO desde español a inglés SOLO para la pregunta que viaja al prompt
-    pregunta = mapear_desc_tipo_es_en(pregunta)
+    # pregunta = mapear_desc_tipo_es_en(pregunta)
 
     # Desambiguación (moneda/fechas/etc.)
     pregunta_clara = manejar_aclaracion(pregunta)
