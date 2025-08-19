@@ -887,6 +887,29 @@ def aplicar_contexto(pregunta: str) -> str:
     pregunta_mod = pregunta
     lower_q = pregunta.lower()
     st.session_state["__last_ref_replacement__"] = None
+        # --- NUEVO: "esos/estos artículos|productos" → usa último top (fecha + tienda)
+    if re.search(r"\bes[eo]s\s+(art[ií]culos|productos)\b", lower_q) \
+       and "__ultimo_top_venta__" in st.session_state.get("contexto", {}):
+        top = st.session_state["contexto"]["__ultimo_top_venta__"]
+        fecha = top.get("FECHA_DOCUMENTO", "")
+        tienda = (top.get("DESC_TIENDA", "") or "").replace("'", "''")  # escapa comillas
+
+        guia = (
+            f" (Filtrar con FECHA_DOCUMENTO = '{fecha}' "
+            f"y DESC_TIENDA = '{tienda}'. Considerar UNIDADES > 0. "
+            f"No filtrar por MONEDA ya que se listan unidades y artículos.)"
+        )
+        # normaliza la referencia para que el LLM entienda que es el resultado previo
+        pregunta_mod = re.sub(
+            r"\bes[eo]s\s+(art[ií]culos|productos)\b",
+            "los artículos del día/tienda anteriores",
+            pregunta_mod,
+            flags=re.I
+        )
+        pregunta_mod += guia
+        st.session_state["__last_ref_replacement__"] = "__ultimo_top_venta__"
+        st.session_state["__last_ref_value__"] = top
+
     # --- manejo especial: "esos/estos artículos|productos|pines" -> usar lista previa ---
     if ("esos articulos" in lower_q or "estos articulos" in lower_q or
         "esos artículos" in lower_q or "estos artículos" in lower_q or
@@ -1000,7 +1023,20 @@ def actualizar_contexto(df: pd.DataFrame):
                 if canonico == "DESC_ARTICULO":
                     articulo_capturado = True
                 break
-
+    # --- NUEVO: guarda el último "top" (fecha + tienda) si vienen en el DF ---
+    try:
+        if "FECHA_DOCUMENTO" in df.columns and "DESC_TIENDA" in df.columns and len(df.index) > 0:
+            # FECHA_DOCUMENTO viene formateada dd/mm/yyyy; normalizamos a YYYYMMDD
+            fecha_raw = str(df["FECHA_DOCUMENTO"].dropna().iloc[0]).strip()
+            fecha_norm = _to_yyyymmdd(fecha_raw)  # ya tienes esta función definida
+            tienda_top = str(df["DESC_TIENDA"].dropna().iloc[0]).strip()
+            if fecha_norm and tienda_top and not es_centro_distribucion(tienda_top):
+                st.session_state.setdefault("contexto", {})["__ultimo_top_venta__"] = {
+                    "FECHA_DOCUMENTO": fecha_norm,   # YYYYMMDD
+                    "DESC_TIENDA": tienda_top
+                }
+    except Exception:
+        pass
     # Si guardamos un ARTICULO, limpiamos TIPO para que no interfiera
     if articulo_capturado and "DESC_TIPO" in st.session_state["contexto"]:
         st.session_state["contexto"].pop("DESC_TIPO", None)
@@ -1354,6 +1390,16 @@ def _necesita_aclaracion(texto: str) -> dict:
     # NUEVO: referencia a lista de tiendas capturada
     ref_tiendas = (("esas tiendas" in texto.lower()) or ("estas tiendas" in texto.lower())) and \
                   ("DESC_TIENDA_LIST" in st.session_state.get("contexto", {}))
+         # --- NUEVO: si hay "último top" y preguntan "esos/estos artículos|productos",
+    # NO pedir fecha ni país (ya tomamos fecha+tienda del contexto)
+    if "__ultimo_top_venta__" in st.session_state.get("contexto", {}) and \
+       re.search(r"\bes[eo]s\s+(art[ií]culos|productos)\b", texto, re.I):
+        return {
+            "moneda": (_pide_montos(texto) and not _tiene_moneda(texto)),  # igual que tu lógica
+            "pais":   False,
+            "fecha":  False,
+            "tienda_vs_cd": False,
+        }
 
     return {
         "moneda": (_pide_montos(texto) and not _tiene_moneda(texto)),
@@ -1737,6 +1783,9 @@ if "clarif_pais_label" in st.session_state:
 tiendas_list = st.session_state.get("contexto", {}).get("DESC_TIENDA_LIST")
 if isinstance(tiendas_list, list) and tiendas_list:
     chips.append(f"Tiendas: {len(tiendas_list)} seleccionada(s)")
+top_ctx = st.session_state.get("contexto", {}).get("__ultimo_top_venta__")
+if top_ctx:
+    chips.append(f"Contexto: {top_ctx['DESC_TIENDA']} • {top_ctx['FECHA_DOCUMENTO']}")
 
 
 
