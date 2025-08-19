@@ -1175,7 +1175,86 @@ _MONEY_KEYS = (
 )
     # Palabras que delatan pais:
 # --- País: detectores ----------------------------------------
- 
+ # --- Normalizadores de SQL (margen, importe) y exclusión de servicios --------
+import re
+
+def normalizar_margen_sql(sql: str) -> str:
+    """
+    Tu tablón no tiene columna MARGEN. Convierte expresiones con MARGEN a
+    (INGRESOS - COSTOS). Además soporta el típico GM% = SUM(MARGEN)/SUM(INGRESOS)*100.
+    """
+    if not sql or not isinstance(sql, str):
+        return sql
+    s = sql
+
+    # 1) GM%: SUM(MARGEN)/SUM(INGRESOS) * 100  -> ((SUM(INGRESOS)-SUM(COSTOS))/NULLIF(SUM(INGRESOS),0))*100
+    s = re.sub(
+        r"SUM\s*\(\s*MARGEN\s*\)\s*/\s*SUM\s*\(\s*INGRESOS\s*\)\s*\*\s*100",
+        r"((SUM(INGRESOS) - SUM(COSTOS)) / NULLIF(SUM(INGRESOS),0)) * 100",
+        s,
+        flags=re.IGNORECASE
+    )
+
+    # 2) SUM(MARGEN) -> SUM(INGRESOS) - SUM(COSTOS)
+    s = re.sub(
+        r"\bSUM\s*\(\s*MARGEN\s*\)",
+        r"SUM(INGRESOS) - SUM(COSTOS)",
+        s,
+        flags=re.IGNORECASE
+    )
+
+    # 3) AVG(MARGEN) (raro, pero por si acaso) -> (SUM(INGRESOS)-SUM(COSTOS))/NULLIF(COUNT(*),0)
+    s = re.sub(
+        r"\bAVG\s*\(\s*MARGEN\s*\)",
+        r"(SUM(INGRESOS) - SUM(COSTOS)) / NULLIF(COUNT(*),0)",
+        s,
+        flags=re.IGNORECASE
+    )
+
+    return s
+
+
+def normalizar_importe_sql(sql: str) -> str:
+    """
+    Si aparece IMPORTE (que no existe en tu tabla), cámbialo por INGRESOS.
+    No toca alias ni comentarios, sólo el identificador.
+    """
+    if not sql or not isinstance(sql, str):
+        return sql
+    # Reemplazo seguro por palabra completa
+    return re.sub(r"\bIMPORTE\b", "INGRESOS", sql, flags=re.IGNORECASE)
+
+
+def _insertar_predicado(sql: str, predicado: str) -> str:
+    """
+    Inserta un predicado de forma segura: si hay WHERE, agrega 'AND ...'
+    antes de GROUP/ORDER/LIMIT; si no hay WHERE, crea 'WHERE ...'.
+    """
+    if not sql or "from ventas" not in sql.lower():
+        return sql
+
+    tail_re = re.compile(r"(?i)\b(group\s+by|order\s+by|limit)\b")
+    if re.search(r"(?i)\bwhere\b", sql):
+        m = tail_re.search(sql)
+        if m:
+            idx = m.start()
+            return sql[:idx].rstrip() + f" AND {predicado} " + sql[idx:]
+        return sql.rstrip() + f" AND {predicado}"
+    else:
+        m = tail_re.search(sql)
+        if m:
+            idx = m.start()
+            return sql[:idx].rstrip() + f" WHERE {predicado} " + sql[idx:]
+        return sql.rstrip() + f" WHERE {predicado}"
+
+
+def asegurar_exclusion_servicios(sql: str) -> str:
+    """
+    Excluye explícitamente bolsas, fletes y despacho, y evita 'PACKING BAGS' como tipo.
+    Úsalo cuando la intención es de PRODUCTOS/ARTÍCULOS (no servicios).
+    """
+    if not sql or "from ventas" not in sql.lower
+
 
 def _habla_de_pais(texto: str) -> bool:
     # ¿se menciona la noción de país en general?
