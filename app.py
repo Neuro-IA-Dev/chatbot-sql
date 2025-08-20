@@ -174,6 +174,8 @@ Puedo entender preguntas de **ventas retail** y generar la **consulta SQL** adec
 ---
 
 ### 🧱 Reglas clave que aplico (del prompt)
+"Jeans, Jackets, Shirts, Sweaters, Sweatshirts, Pants, Knits, etc."
+→ SIEMPRE `DESC_TIPO` (nunca en `DESC_LINEA`).
 # MÁRGENES (cuando no existe columna MARGEN)
 - Si piden **margen** en monto (margen bruto / utilidad), calcula:
   (SUM(INGRESOS) - SUM(COSTOS))  AS MARGEN
@@ -518,6 +520,24 @@ def corregir_identificadores_sql(sql: str) -> str:
                     if c.lower() == corr:
                         sql = _reemplazar_ident_fuera_de_comillas(sql, tok, c)
                         break
+    return sql
+def corregir_tipo_vs_linea(sql: str) -> str:
+    """Corrige casos donde el modelo mete Jeans, Jackets, etc en DESC_LINEA."""
+    if not isinstance(sql, str) or not sql.strip():
+        return sql
+
+    # Lista de valores que son de TIPO, nunca de LINEA
+    valores_tipo = ["Jeans", "Jackets", "Shirts", "Sweaters",
+                    "Sweatshirts", "Pants", "Knits", "Patches",
+                    "Buttons", "Tabs", "Pines", "Packing Bags"]
+
+    for v in valores_tipo:
+        # Borrar cualquier filtro duplicado en LINEA
+        patron = rf"(?i)\bDESC_LINEA\s+LIKE\s+'%{v}%'"
+        sql = re.sub(patron, "", sql)
+
+    # Limpieza de ANDs dobles
+    sql = re.sub(r"\s+AND\s+(?=\s*(ORDER|GROUP|LIMIT|$))", " ", sql)
     return sql
 
 def forzar_articulo_y_excluir_bolsas(pregunta: str, sql: str) -> str:
@@ -1853,7 +1873,10 @@ if pregunta:
         # 5) Preparar guardado en cache
         # ✅ NUEVO: validar/corregir identificadores de columnas
         sql_query = corregir_identificadores_sql(sql_query)
-
+        sql_query = forzar_articulo_y_excluir_bolsas(pregunta_con_contexto, sql_query)
+        sql_query = corregir_jeans_en_linea(sql_query)         # fix específico jeans
+        sql_query = corregir_tipo_vs_linea(sql_query)          # fix general tipo/linea
+        sql_query = normalizar_margen_sql(sql_query)
         # Saneador final
         sql_query = _sanear_puntos_y_comas(sql_query)
         embedding = obtener_embedding(pregunta)
