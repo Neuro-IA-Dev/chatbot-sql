@@ -881,6 +881,54 @@ def _sugerir_monedas(paises: set[str], es_agrupado_por_pais: bool) -> list[str]:
     # Un solo país -> USD + local
     unico = next(iter(paises))
     return ["USD", _LOCAL_CURRENCY_BY_SOC.get(unico, "USD")]
+# --- TICKET PROMEDIO: SIEMPRE monto = SUM(INGRESOS)/SUM(UNIDADES), nunca porcentaje
+_TICKET_RE = re.compile(r"\bticket\s+promedio\b", re.I)
+
+def corregir_ticket_promedio_sql(pregunta: str, sql: str) -> str:
+    """Fuerza que el ticket promedio sea SUM(INGRESOS)/NULLIF(SUM(UNIDADES),0) sin *100 ni %."""
+    if not isinstance(sql, str) or not sql.strip() or not isinstance(pregunta, str):
+        return sql
+    if not _TICKET_RE.search(pregunta):
+        return sql
+
+    s = sql
+
+    # 1) Si hubo un cálculo con *100, quítalo
+    s = re.sub(r"(\)\s*\)\s*\*\s*100\b)", ")", s)          # ...)) * 100  -> ...))
+    s = re.sub(r"(\)\s*\*\s*100\b)", ")", s)               # ...) * 100   -> ...)
+
+    # 2) Reemplaza cualquier COUNT o AVG usado erróneamente para ticket
+    #    por el cálculo canónico SUM(INGRESOS)/NULLIF(SUM(UNIDADES),0)
+    #    (muy conservador: solo si detectamos 'ticket' en la pregunta)
+    s = re.sub(
+        r"(?i)\bavg\s*\(\s*ingresos\s*/\s*nullif\s*\(\s*unidades\s*,\s*0\s*\)\s*\)",
+        r"SUM(INGRESOS) / NULLIF(SUM(UNIDADES),0)", s
+    )
+    s = re.sub(
+        r"(?i)\bsum\s*\(\s*ingresos\s*\)\s*/\s*sum\s*\(\s*unidades\s*\)",
+        r"SUM(INGRESOS) / NULLIF(SUM(UNIDADES),0)", s
+    )
+
+    # 3) Si no encontramos ninguna división “ingresos / unidades”, la inyectamos en el SELECT
+    if not re.search(r"(?i)sum\s*\(\s*ingresos\s*\)\s*/\s*nullif\s*\(\s*sum\s*\(\s*unidades\s*\)\s*,\s*0\s*\)", s):
+        s = re.sub(
+            r"(?i)\bselect\b\s*(distinct\s+)?",
+            r"SELECT \1 SUM(INGRESOS) / NULLIF(SUM(UNIDADES),0) AS TICKET_PROMEDIO, ",
+            s,
+            count=1
+        )
+
+    # 4) Arregla alias: evita alias con % y usa TICKET_PROMEDIO (o agrega si falta)
+    #    Cambia alias tipo TICKET_% o *_PORC a TICKET_PROMEDIO
+    s = re.sub(r"(?i)\bAS\s+(TICKET[_\s]*PORC(?:ENTUAL)?|.*PORC.*)\b", "AS TICKET_PROMEDIO", s)
+    # si el cálculo no tiene alias, intenta añadirlo
+    s = re.sub(
+        r"(?i)(sum\s*\(\s*ingresos\s*\)\s*/\s*nullif\s*\(\s*sum\s*\(\s*unidades\s*\)\s*,\s*0\s*\))(\s*)(,|\bfrom\b)",
+        r"\1 AS TICKET_PROMEDIO\2\3",
+        s
+    )
+
+    return s
 
 # --- Moneda: detectar en el texto (agrega PEN/BOB)
 def _tiene_moneda(texto: str) -> bool:
@@ -1962,6 +2010,7 @@ if pregunta:
         sql_query = corregir_tipo_vs_linea(sql_query)          # fix general tipo/linea
         sql_query = normalizar_margen_sql(sql_query)
         # Saneador final
+        sql_query = corregir_ticket_promedio_sql(pregunta_con_contexto, sql_query)
         sql_query = _sanear_puntos_y_comas(sql_query)
         embedding = obtener_embedding(pregunta)
         guardar_en_cache_pending = embedding if embedding else None
