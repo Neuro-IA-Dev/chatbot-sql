@@ -980,6 +980,9 @@ Reglas estrictas:
    AND FECHA_DOCUMENTO BETWEEN DATE_FORMAT(MAX(FECHA_DOCUMENTO), '%Y-%m-01')
                            AND LAST_DAY(MAX(FECHA_DOCUMENTO)).
 4. Nunca asumas un año fijo como 2023. Siempre usa las fechas realmente disponibles en la tabla.
+5.Si el usuario pide "ticket promedio", SIEMPRE calcula como SUM(INGRESOS) / NULLIF(SUM(UNIDADES),0). 
+   - El resultado debe ser un valor monetario (ej: USD, CLP) según la moneda solicitada.
+   - Nunca lo devuelvas como porcentaje.
 # CONTEXTO
 - Trabajas sobre el tablón único **VENTAS** (no asumas joins externos).
 - Devuelve **solo** la consulta **SQL** (MySQL/MariaDB), una sentencia por SELECT, **sin texto extra**.
