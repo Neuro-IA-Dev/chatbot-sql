@@ -370,6 +370,62 @@ def _es_intencion_producto(pregunta: str) -> bool:
         return False
     # Solo si NO piden explícitamente bolsas/packing/fletes/despachos
     return bool(_PRODUCTO_INTENT_RE.search(pregunta)) and not bool(_EXPLICT_SERVICE_RE.search(pregunta))
+# --- "Más compras" debe significar volumen (SUM(UNIDADES)), no COUNT(*) ---
+_MAS_COMPRAS_RE = re.compile(
+    r"\b(m[aá]s\s+compra[s]?|qu[ié]n\s+compra\s+m[aá]s|cliente\s+que\s+m[aá]s\s+compra|"
+    r"mayor\s+compra[s]?|el\s+que\s+m[aá]s\s+compra)\b",
+    re.IGNORECASE
+)
+# Frases que SÍ piden explícitamente cantidad de transacciones (preserva COUNT)
+_TRANSACCIONES_EXPL_RE = re.compile(
+    r"\b(n[uú]mero|cantidad|conteo|count)\s+de\s+(compras|transacciones|documentos|boletas|facturas)\b",
+    re.IGNORECASE
+)
+
+def preferir_unidades_para_mas_compras(pregunta: str, sql: str) -> str:
+    """
+    Si la pregunta dice "más compras" (y no pide explícitamente número de transacciones),
+    transforma COUNT(*) -> SUM(UNIDADES) con alias consistente y asegura UNIDADES > 0.
+    """
+    if not isinstance(sql, str) or not sql.strip() or not isinstance(pregunta, str):
+        return sql
+
+    if not _MAS_COMPRAS_RE.search(pregunta) or _TRANSACCIONES_EXPL_RE.search(pregunta):
+        return sql  # no aplica
+
+    s_low = sql.lower()
+    if "sum(unidades)" in s_low:
+        # ya está bien, solo aseguramos UNIDADES > 0
+        if "unidades > 0" not in s_low:
+            sql = _inyectar_predicado_where(sql, "UNIDADES > 0")
+        return sql
+
+    # Reemplazos comunes de COUNT(*) -> SUM(UNIDADES)
+    s = sql
+
+    # 1) ORDER BY alias TOTAL_COMPRAS -> TOTAL_UNIDADES
+    s = re.sub(r"(?i)\border\s+by\s+total_compras\b", "ORDER BY TOTAL_UNIDADES", s)
+
+    # 2) SELECT ... COUNT(*) AS TOTAL_COMPRAS -> SUM(UNIDADES) AS TOTAL_UNIDADES
+    s = re.sub(r"(?i)count\s*\(\s*\*\s*\)\s+as\s+total_compras", "SUM(UNIDADES) AS TOTAL_UNIDADES", s)
+
+    # 3) SELECT ... COUNT(*) AS ALGO -> SUM(UNIDADES) AS ALGO (respeta alias existente)
+    s = re.sub(r"(?i)count\s*\(\s*\*\s*\)\s+as\s+([A-Za-z_][A-Za-z0-9_]*)", r"SUM(UNIDADES) AS \1", s)
+
+    # 4) SELECT ... COUNT(*) , -> SUM(UNIDADES) ,  (sin alias)
+    s = re.sub(r"(?i)count\s*\(\s*\*\s*\)\s*,", "SUM(UNIDADES),", s)
+
+    # 5) SELECT ... , COUNT(*) FROM -> , SUM(UNIDADES) FROM
+    s = re.sub(r"(?i),\s*count\s*\(\s*\*\s*\)\s*from", ", SUM(UNIDADES) FROM", s)
+
+    # 6) ORDER BY COUNT(*) -> ORDER BY SUM(UNIDADES)
+    s = re.sub(r"(?i)order\s+by\s+count\s*\(\s*\*\s*\)", "ORDER BY SUM(UNIDADES)", s)
+
+    # Asegura filtro de devoluciones
+    if "unidades > 0" not in s.lower():
+        s = _inyectar_predicado_where(s, "UNIDADES > 0")
+
+    return s
 
 def forzar_articulo_y_excluir_bolsas(pregunta: str, sql: str) -> str:
     """
@@ -1677,6 +1733,8 @@ if pregunta:
         sql_query = normalizar_importe_sql(sql_query)
         sql_query = asegurar_exclusion_servicios(sql_query)  # opcional
         sql_query = _sanear_puntos_y_comas(sql_query)
+        # ➜ NUEVO: "más compras" = SUM(UNIDADES) por defecto
+        sql_query = preferir_unidades_para_mas_compras(pregunta_con_contexto, sql_query)
         # 5) Preparar guardado en cache
         embedding = obtener_embedding(pregunta)
         guardar_en_cache_pending = embedding if embedding else None
