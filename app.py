@@ -703,6 +703,7 @@ def aplicar_formato_monetario(df: pd.DataFrame) -> pd.DataFrame:
 
     # 1) Detectar columnas porcentuales por nombre
     pct_name_re = re.compile(r"(porc|porcentaje|pct|percent|gm(_|$)|gmporc|margen_?porc)", re.I)
+    money_name_guard = re.compile(r"(ticket|precio|price|valor)", re.I)
     percent_cols = []
     for c in numeric_cols:
         name = str(c)
