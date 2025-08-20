@@ -973,6 +973,13 @@ def es_consulta_segura(sql):
 sql_prompt = PromptTemplate(
     input_variables=["pregunta"],
     template = """
+Reglas estrictas:
+1. Si en la pregunta el usuario especifica una moneda (ej: CLP, USD, EUR), usa esa moneda directamente en la cláusula MONEDA = 'XXX', sin importar lo que esté seleccionado en la UI.
+2. Si no se menciona una moneda explícita en la pregunta, entonces utiliza la moneda seleccionada en la UI.
+3. Cuando el usuario pida "último mes disponible" o "mes pasado", selecciona dinámicamente el mes más reciente de la tabla VENTAS:
+   AND FECHA_DOCUMENTO BETWEEN DATE_FORMAT(MAX(FECHA_DOCUMENTO), '%Y-%m-01')
+                           AND LAST_DAY(MAX(FECHA_DOCUMENTO)).
+4. Nunca asumas un año fijo como 2023. Siempre usa las fechas realmente disponibles en la tabla.
 # CONTEXTO
 - Trabajas sobre el tablón único **VENTAS** (no asumas joins externos).
 - Devuelve **solo** la consulta **SQL** (MySQL/MariaDB), una sentencia por SELECT, **sin texto extra**.
