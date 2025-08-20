@@ -703,24 +703,46 @@ def aplicar_formato_monetario(df: pd.DataFrame) -> pd.DataFrame:
 
     # 1) Detectar columnas porcentuales por nombre
     pct_name_re = re.compile(r"(porc|porcentaje|pct|percent|gm(_|$)|gmporc|margen_?porc)", re.I)
-    percent_cols = [c for c in numeric_cols if pct_name_re.search(str(c))]
-
-    # (opcional) heurística por valores: 0..100 mayormente ⇒ probable %
+    percent_cols = []
     for c in numeric_cols:
-        if c in percent_cols:
-            continue
-        s = df2[c].dropna().astype(float)
-        if not s.empty and (s.between(-100, 100).mean() > 0.95) and (s.abs().max() <= 1000):
-            # evita capturar conteos/enteros
-            if not (s.mod(1) == 0).all():
-                percent_cols.append(c)
+        name = str(c)
+        if pct_name_re.search(name) and not money_name_guard.search(name):
+            percent_cols.append(c)
 
-    # 2) Detectar columnas de dinero por nombre (excluyendo % y conteos)
+    # 2) Detectar columnas de dinero por nombre (incluye ticket)
     include_money_re = re.compile(
         r"(ingres|venta|cost|margen(?!.*porc)|gm(?!.*porc)|precio|importe|neto|bruto|valor|ticket"
         r"|^total_(ingres|venta|cost|margen|gm|precio|importe|neto|bruto|valor|ticket))",
         re.I,
     )
+    exclude_non_money_re = re.compile(
+        r"(unid|cantidad|count|conteo|nro|numero|tienda|cliente|pais|pa[ií]s|canal|art[ií]culo|articulo|sku|porc|pct|percent|porcentaje)",
+        re.I,
+    )
+
+    money_cols = []
+    for c in numeric_cols:
+        name = str(c)
+        if c in percent_cols:
+            continue  # ya marcado como %
+        if include_money_re.search(name) and not exclude_non_money_re.search(name):
+            # evita formatear conteos enteros como dinero
+            svals = df2[c].dropna().astype(float)
+            if not (svals.mod(1) == 0).all():
+                money_cols.append(c)
+
+    # 3) Heurística de % por valores (opcional): solo si NO es money ni 'ticket|precio|valor'
+    for c in numeric_cols:
+        if c in percent_cols or c in money_cols:
+            continue
+        name = str(c)
+        if money_name_guard.search(name):
+            continue
+        s = df2[c].dropna().astype(float)
+        if not s.empty and (s.between(-100, 100).mean() > 0.95) and (s.abs().max() <= 1000):
+            # y no parece conteo entero
+            if not (s.mod(1) == 0).all():
+                percent_cols.append(c)
     exclude_non_money_re = re.compile(
         r"(unid|cantidad|count|conteo|nro|numero|tienda|cliente|pais|pa[ií]s|canal|art[ií]culo|articulo|sku|porc|pct|percent|porcentaje)",
         re.I,
