@@ -902,6 +902,28 @@ sql_prompt = PromptTemplate(
   - “tienda”→DESC_TIENDA | “marca”→DESC_MARCA | “calidad”→DESC_CALIDAD | “temporada”→DESC_TEMPORADA | “producto/artículo/sku”→DESC_ARTICULO o DESC_SKU según contexto.
 - País (SOCIEDAD_CO): 1000=Chile, 2000=Perú, 3000=Bolivia. Para “por país / ranking por país / ¿en qué país…?” usa:
   `CASE SOCIEDAD_CO WHEN '1000' THEN 'Chile' WHEN '2000' THEN 'Perú' WHEN '3000' THEN 'Bolivia' END AS PAIS`.
+# REFUERZO: DESC_TIPO vs DESC_LINEA (NO confundir)
+- "Jeans, Jackets, Shirts, Sweaters, Sweatshirts, Pants, Knits, Patches, Buttons, Tabs, Pines, Packing Bags" 
+  son **valores de `DESC_TIPO`**. Cuando el usuario mencione estos términos, filtra con:
+  `DESC_TIPO LIKE '%<valor>%'` (no uses `DESC_LINEA` para ellos).
+
+- `DESC_LINEA` se usa SOLO para grandes familias: 
+  **Accesorios, Bottoms, Tops, Customization, Insumos**.
+  Cuando el usuario pida estas familias, filtra con:
+  `DESC_LINEA LIKE '%<familia>%'`.
+
+- Ejemplos correctos:
+  • “Jeans mujer en Chile” → `AND DESC_TIPO LIKE '%Jeans%'`
+  • “Ventas de Tops Dockers” → `AND DESC_LINEA LIKE '%Tops%' AND DESC_MARCA LIKE '%DOCKERS%'`
+
+- Ejemplo incorrecto (NO hacer):
+  • `AND DESC_LINEA LIKE '%Jeans%'`  ❌  (debe ser `DESC_TIPO`)
+
+- Si el usuario mezcla ambos (“Jeans en Tops”), prioriza **lo más específico**:
+  `DESC_TIPO LIKE '%Jeans%'` y, solo si lo pide explícito, añade también la familia:
+  `DESC_LINEA LIKE '%Tops%'`.
+
+- Recuerda aplicar `UNIDADES > 0` cuando se hable de ventas/top/más vendido.
 
 # DEFINICIONES DE ARTÍCULO VS SERVICIO
 - **Artículo** ⇢ `COD_TIPOARTICULO='MODE'`.
