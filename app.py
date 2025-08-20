@@ -1600,6 +1600,19 @@ def _necesita_aclaracion(texto: str) -> dict:
         "tienda_vs_cd": (_habla_de_tienda(texto) and not _menciona_cd(texto)),
     }
 
+def corregir_jeans_en_linea(sql: str) -> str:
+    """Elimina filtros erróneos de Jeans en DESC_LINEA (el tipo correcto es DESC_TIPO)."""
+    if not isinstance(sql, str) or not sql.strip():
+        return sql
+
+    s = sql
+    # Quita "AND DESC_LINEA LIKE '%Jeans%'" y variantes
+    s = re.sub(r"(?i)\s+AND\s+DESC_LINEA\s+LIKE\s+'%Jeans%'\s*", " ", s)
+    s = re.sub(r"(?i)\bDESC_LINEA\s+LIKE\s+'%Jeans%'\s+AND\s+", " ", s)
+    s = re.sub(r"(?i)\bDESC_LINEA\s+LIKE\s+'%Jeans%'\s*", " ", s)
+    # Limpia AND suelto antes de ORDER/GROUP/LIMIT o fin
+    s = re.sub(r"\s+AND\s+(?=(ORDER|GROUP|LIMIT|$))", " ", s, flags=re.IGNORECASE)
+    return s
 
 def _defaults_fecha() -> Tuple[str, str, str]:
     """Rango por defecto: últimos 30 días, en formato dd/mm/yyyy + yyyyMMdd."""
