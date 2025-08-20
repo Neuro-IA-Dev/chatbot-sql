@@ -676,35 +676,96 @@ def forzar_distinct_pais_si_corresponde(pregunta, sql_generado):
 def aplicar_formato_monetario(df: pd.DataFrame) -> pd.DataFrame:
     """
     Formatea columnas monetarias con separador europeo (7.765.093,83) y agrega sufijo de moneda.
-    Evita aplicar formato a conteos (COUNT) y totales que no sean de dinero.
-    Reglas:
-      - Detecta columnas numéricas cuyo NOMBRE sugiera dinero (ingresos, costos, precio, etc.).
-      - Excluye columnas de unidades, cantidades, conteos, tiendas, clientes, país, canal, etc.
-      - Si todos los valores son enteros (probable COUNT), NO se considera dinero.
-      - Si existe columna MONEDA, usa su valor por fila; si no, usa la última moneda elegida si es única.
+    No aplica a conteos ni a columnas porcentuales (GM%, MARGEN_PORCENTAJE, etc.),
+    que se formatean como '82,98 %' sin sufijo de moneda.
     """
     if df is None or df.empty:
         return df
 
     df2 = df.copy()
 
-    # 1) Candidatas por tipo numérico
-    numeric_cols = [c for c in df2.columns if pd.api.types.is_numeric_dtype(df2[c])]
+    # --- helpers de formato ---
+    def _fmt_num(v: float) -> str:
+        if pd.isna(v):
+            return ""
+        s = f"{float(v):,.2f}"
+        return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
+    def _fmt_pct(v: float) -> str:
+        if pd.isna(v):
+            return ""
+        return _fmt_num(v) + " %"
+
+    # numéricas candidatas
+    numeric_cols = [c for c in df2.columns if pd.api.types.is_numeric_dtype(df2[c])]
     if not numeric_cols:
         return df2
 
-    # 2) Heurística por nombre de columna
-    #    - quitamos "total" genérico del include para no capturar TOTAL_TIENDA(S), TOTAL_CLIENTES, etc.
-    #    - permitimos "total" solo si viene acompañado de palabras de dinero (total_ingresos, total_costos, etc.)
-    include_pat = re.compile(
-        r"(ingres|venta|cost|margen|gm|precio|importe|neto|bruto|valor|ticket|^total_(ingres|venta|cost|margen|gm|precio|importe|neto|bruto|valor|ticket))",
+    # 1) Detectar columnas porcentuales por nombre
+    pct_name_re = re.compile(r"(porc|porcentaje|pct|percent|gm(_|$)|gmporc|margen_?porc)", re.I)
+    percent_cols = [c for c in numeric_cols if pct_name_re.search(str(c))]
+
+    # (opcional) heurística por valores: 0..100 mayormente ⇒ probable %
+    for c in numeric_cols:
+        if c in percent_cols:
+            continue
+        s = df2[c].dropna().astype(float)
+        if not s.empty and (s.between(-100, 100).mean() > 0.95) and (s.abs().max() <= 1000):
+            # evita capturar conteos/enteros
+            if not (s.mod(1) == 0).all():
+                percent_cols.append(c)
+
+    # 2) Detectar columnas de dinero por nombre (excluyendo % y conteos)
+    include_money_re = re.compile(
+        r"(ingres|venta|cost|margen(?!.*porc)|gm(?!.*porc)|precio|importe|neto|bruto|valor|ticket"
+        r"|^total_(ingres|venta|cost|margen|gm|precio|importe|neto|bruto|valor|ticket))",
         re.I,
     )
-    exclude_pat = re.compile(
-        r"(unid|cantidad|count|conteo|nro|numero|tienda|cliente|pais|pa[ií]s|canal|art[ií]culo|articulo|sku)",
+    exclude_non_money_re = re.compile(
+        r"(unid|cantidad|count|conteo|nro|numero|tienda|cliente|pais|pa[ií]s|canal|art[ií]culo|articulo|sku|porc|pct|percent|porcentaje)",
         re.I,
     )
+
+    def _series_is_integer_like(s: pd.Series) -> bool:
+        vals = s.dropna().astype(float).values
+        if vals.size == 0:
+            return False
+        return (np.mod(vals, 1) == 0).all()
+
+    money_cols = []
+    for c in numeric_cols:
+        name = str(c)
+        if c in percent_cols:
+            continue  # nunca formatear % como dinero
+        if include_money_re.search(name) and not exclude_non_money_re.search(name):
+            if not _series_is_integer_like(df2[c]):
+                money_cols.append(c)
+
+    # 3) Formatear porcentajes
+    for c in percent_cols:
+        df2[c] = df2[c].map(lambda x: _fmt_pct(x) if pd.notnull(x) else x)
+
+    # 4) Formatear dinero (con sufijo de moneda si corresponde)
+    #    - Si hay columna MONEDA, úsala por fila
+    #    - Si no, usa última moneda confirmada (si es única); si no, solo formato numérico
+    last = st.session_state.get("clarif_moneda_last")
+    single_suffix = last[0] if isinstance(last, list) and len(last) == 1 else (last if isinstance(last, str) else None)
+
+    if "MONEDA" in df2.columns:
+        for c in money_cols:
+            df2[c] = df2.apply(
+                lambda r: f"{_fmt_num(r[c])} {r['MONEDA']}" if pd.notnull(r[c]) else r[c],
+                axis=1,
+            )
+    else:
+        for c in money_cols:
+            if single_suffix:
+                df2[c] = df2[c].map(lambda x: f"{_fmt_num(x)} {single_suffix}" if pd.notnull(x) else x)
+            else:
+                df2[c] = df2[c].map(lambda x: _fmt_num(x) if pd.notnull(x) else x)
+
+    return df2
+
 
     def _series_is_integer_like(s: pd.Series) -> bool:
         """True si todos los valores no nulos son enteros (p.ej. conteos)."""
