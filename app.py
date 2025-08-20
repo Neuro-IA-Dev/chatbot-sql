@@ -115,6 +115,26 @@ def asegurar_exclusion_servicios(sql: str) -> str:
     s = re.sub(r"(?i)UPPER\(\s*DESC_ARTICULO\s*\)\s+LIKE\s+'%BOLSA%'", 
                "UPPER(DESC_ARTICULO) NOT LIKE '%BOLSA%'", s)
     return s
+# Diccionario con las columnas reales por tabla
+COLUMNAS_VALIDAS = {
+    "ventas": [
+        "numero_documento", "cod_articulo", "ingresos", "costos", "tipo_documento",
+        "cod_tienda", "fecha_venta"
+    ],
+    "articulos": [
+        "cod_articulo", "desc_articulo", "desc_generico", 
+        "desc_temporada", "desc_grado_moda"
+    ],
+    "tiendas": [
+        "cod_tienda", "desc_tienda", "cod_canal", "cod_marca"
+    ],
+    "marca": [
+        "cod_marca", "desc_marca"
+    ],
+    "canal": [
+        "cod_canal", "desc_canal"
+    ]
+}
 
 def render_help_capacidades():
     st.markdown("## 🤖 ¿Qué puedes preguntarme?")
@@ -426,6 +446,79 @@ def preferir_unidades_para_mas_compras(pregunta: str, sql: str) -> str:
         s = _inyectar_predicado_where(s, "UNIDADES > 0")
 
     return s
+# === Validador y corrector de identificadores SQL (columnas conocidas) ===
+import difflib
+
+# Lista canónica de columnas que realmente existen en tu tablón VENTAS
+COLUMNAS_VALIDAS = {
+    # tablon VENTAS (descriptivos más usados por tu app)
+    "VENTAS": [
+        "FECHA_DOCUMENTO","MONEDA","UNIDADES","INGRESOS","COSTOS",
+        "DESC_TIENDA","DESC_CANAL","DESC_MARCA","DESC_ARTICULO","DESC_TIPO",
+        "DESC_LINEA","SOCIEDAD_CO","NOMBRE_CLIENTE","PROMO","D_PROMO",
+        "COD_TIPOARTICULO","DESC_TIPOARTICULO","COD_MODELO","TALLA","LARGO",
+        "COD_COLOR","TIPO_DOC"
+    ]
+}
+# Mapa de correcciones determinísticas frecuentes (errores típicos → correcto)
+CORRECCIONES_DIRECTAS = {
+    "INGRESO": "INGRESOS",
+    "COSTO": "COSTOS",
+    # añade aquí si detectas más singular/plural o typos frecuentes
+}
+
+def _reemplazar_ident_fuera_de_comillas(sql: str, wrong: str, right: str) -> str:
+    """
+    Reemplaza `wrong` por `right` como IDENTIFICADOR (palabra completa) evitando
+    tocar literales entre comillas o patrones de LIKE ('%...%').
+    """
+    # Partimos por comillas simples y alternamos: segmentos pares = fuera de comillas
+    parts = sql.split("'")
+    for i in range(0, len(parts), 2):
+        parts[i] = re.sub(rf"(?<![%A-Za-z0-9_])\b{re.escape(wrong)}\b(?![%A-Za-z0-9_])",
+                          right, parts[i], flags=re.IGNORECASE)
+    return "'".join(parts)
+
+def corregir_identificadores_sql(sql: str) -> str:
+    """
+    1) Aplica correcciones directas seguras (INGRESO→INGRESOS, COSTO→COSTOS, etc.)
+    2) Opcionalmente sugiere/fuerza la más parecida si el identificador no existe
+       y hay una coincidencia muy alta en el inventario de COLUMNAS_VALIDAS.
+    """
+    if not isinstance(sql, str) or not sql.strip():
+        return sql
+
+    # 1) Correcciones directas (conservadoras)
+    for wrong, right in CORRECCIONES_DIRECTAS.items():
+        sql = _reemplazar_ident_fuera_de_comillas(sql, wrong, right)
+
+    # 2) Corrección por similitud (muy conservadora)
+    #    Construimos un set de válidas en minúsculas para comparación
+    valid = set(c.lower() for cols in COLUMNAS_VALIDAS.values() for c in cols)
+
+    # tokens candidatos a ser identificadores (evitamos duplicados)
+    tokens = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", sql))
+    for tok in tokens:
+        lo = tok.lower()
+        if lo in valid:
+            continue  # ya es válido
+
+        # ignoramos palabras clave SQL y funciones comunes
+        if lo in {"select","from","where","and","or","group","by","order","limit",
+                  "sum","avg","min","max","count","distinct","case","when","then","else","end","as","not","like"}:
+            continue
+
+        # buscamos la columna válida más parecida
+        match = difflib.get_close_matches(lo, list(valid), n=1, cutoff=0.88)  # umbral alto
+        if match:
+            corr = match[0]  # ya está en minúsculas
+            # usamos la forma original canónica (rescatamos mayúsculas del inventario)
+            for cols in COLUMNAS_VALIDAS.values():
+                for c in cols:
+                    if c.lower() == corr:
+                        sql = _reemplazar_ident_fuera_de_comillas(sql, tok, c)
+                        break
+    return sql
 
 def forzar_articulo_y_excluir_bolsas(pregunta: str, sql: str) -> str:
     """
@@ -1736,6 +1829,11 @@ if pregunta:
         # ➜ NUEVO: "más compras" = SUM(UNIDADES) por defecto
         sql_query = preferir_unidades_para_mas_compras(pregunta_con_contexto, sql_query)
         # 5) Preparar guardado en cache
+        # ✅ NUEVO: validar/corregir identificadores de columnas
+        sql_query = corregir_identificadores_sql(sql_query)
+
+        # Saneador final
+        sql_query = _sanear_puntos_y_comas(sql_query)
         embedding = obtener_embedding(pregunta)
         guardar_en_cache_pending = embedding if embedding else None
 
