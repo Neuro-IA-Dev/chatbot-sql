@@ -2279,11 +2279,7 @@ if pregunta:
         
         # 3) Saneador de ; por si los enforcers añadieron espacios
         sql_query = _sanear_puntos_y_comas(sql_query)
-
         guardar_en_cache_pending = embedding if embedding else None
-
-
-
 
 # 6) Ejecutar SQL (soporta múltiples SELECT separados por ';') — SOLO si hay SQL
 if pregunta and isinstance(sql_query, str) and sql_query.strip():
