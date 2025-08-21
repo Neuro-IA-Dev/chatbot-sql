@@ -632,7 +632,63 @@ def mapear_desc_tipo_es_en(texto: str) -> str:
     for patron, canonico in EQUIV_DESC_TIPO_ES_EN.items():
         t = re.sub(patron, canonico, t, flags=re.IGNORECASE)
     return t
+# --- GÉNERO: mapeo ES -> EN y fixers ------------------------------------------
+_GEN_ES_EN = [
+    (re.compile(r"\b(mujer|mujeres|femenin[oa]s?)\b", re.I), "Woman"),
+    (re.compile(r"\b(hombre|hombres|masculin[oa]s?|caballero[s]?|var[oó]n(?:es)?)\b", re.I), "Men"),
+    (re.compile(r"\bunisex\b", re.I), "Unisex"),
+]
 
+def mapear_genero_es_en(texto: str) -> tuple[str, str | None]:
+    """
+    Devuelve (texto_mapeado, genero_detectado) donde genero_detectado es 'Woman'/'Men'/'Unisex' o None.
+    Reemplaza las menciones en español por la forma canónica para ayudar al LLM.
+    """
+    if not isinstance(texto, str) or not texto.strip():
+        return texto, None
+    genero = None
+    t = texto
+    for pat, canon in _GEN_ES_EN:
+        if pat.search(t):
+            t = pat.sub(canon, t)          # normaliza la pregunta
+            genero = canon                 # recuerda el género detectado
+    return t, genero
+
+def forzar_genero_en_sql_si_corresponde(pregunta: str, sql: str) -> str:
+    """
+    Si hay género en contexto y el SQL no filtra por DESC_GENERO, lo inyecta.
+    """
+    if not isinstance(sql, str) or not sql.strip():
+        return sql
+    gen = st.session_state.get("contexto", {}).get("DESC_GENERO")
+    if not gen or "desc_genero" in sql.lower():
+        return sql
+    return _inyectar_predicado_where(sql, f"DESC_GENERO LIKE '%{gen}%'")
+
+def corregir_genero_mal_puesto_en_sql(sql: str) -> str:
+    """
+    Corrige casos donde el LLM pone Mujer/Hombre/Unisex en DESC_ARTICULO o en DESC_GENERO sin normalizar.
+    - Quita predicados del tipo: DESC_ARTICULO LIKE '%Mujer%' / '%Hombre%' / '%Unisex%'
+    - Normaliza DESC_GENERO a Woman/Men/Unisex
+    """
+    if not isinstance(sql, str) or not sql.strip():
+        return sql
+
+    s = sql
+
+    # 1) Elimina "género" mal aplicado sobre DESC_ARTICULO
+    s = re.sub(r"(?i)\s+AND\s+DESC_ARTICULO\s+LIKE\s+'%(Mujer|Hombre|Unisex)%'\s*", " ", s)
+    s = re.sub(r"(?i)\bDESC_ARTICULO\s+LIKE\s+'%(Mujer|Hombre|Unisex)%'\s+AND\s+", " ", s)
+    s = re.sub(r"(?i)\bDESC_ARTICULO\s+LIKE\s+'%(Mujer|Hombre|Unisex)%'\s*", " ", s)
+
+    # 2) Normaliza posibles valores en DESC_GENERO
+    s = re.sub(r"(?i)(DESC_GENERO\s+LIKE\s+'%)Mujer(%')", r"\1Woman\2", s)
+    s = re.sub(r"(?i)(DESC_GENERO\s+LIKE\s+'%)Hombre(%')", r"\1Men\2", s)
+
+    # 3) Limpia AND sueltos antes de GROUP/ORDER/LIMIT/fin
+    s = re.sub(r"\s+AND\s+(?=(GROUP|ORDER|LIMIT|$))", " ", s, flags=re.IGNORECASE)
+
+    return s
 def make_excel_download_bytes(df: pd.DataFrame, sheet_name="Datos"):
     """Devuelve bytes de un .xlsx con el dataframe."""
     bio = io.BytesIO()
@@ -2040,7 +2096,14 @@ if pregunta:
     st.session_state["__last_ref_replacement__"] = None  # reset de tracking opcional
 
     # Normaliza DESC_TIPO desde español a inglés SOLO para la pregunta que viaja al prompt
+    # 1) Normaliza DESC_TIPO (ES->EN)
     pregunta = mapear_desc_tipo_es_en(pregunta)
+    
+    # 2) Normaliza GÉNERO (ES->EN) y guarda en contexto
+    pregunta, genero_detectado = mapear_genero_es_en(pregunta)
+    if genero_detectado:
+        st.session_state.setdefault("contexto", {})["DESC_GENERO"] = genero_detectado
+
 
     # Desambiguación (moneda/fechas/etc.)
     pregunta_clara = manejar_aclaracion(pregunta)
@@ -2119,6 +2182,10 @@ if pregunta:
         sql_query = corregir_tipo_vs_linea(sql_query)          # fix general tipo/linea
         sql_query = normalizar_margen_sql(sql_query)
         # Saneador final
+        # 🧩 NUEVO: corrige si el LLM puso Mujer/Hombre/Unisex en DESC_ARTICULO
+        sql_query = corregir_genero_mal_puesto_en_sql(sql_query)
+        # 🧩 NUEVO: si hay género en contexto y aún no aparece, inyectarlo
+        sql_query = forzar_genero_en_sql_si_corresponde(pregunta_con_contexto, sql_query)
         # ✅ NUEVO: inyectar género según contexto
         sql_query = forzar_genero_en_sql_si_corresponde(pregunta_con_contexto, sql_query)
         sql_query = remover_filtro_moneda_si_no_monetario(sql_query)
