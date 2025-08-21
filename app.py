@@ -247,6 +247,23 @@ EQUIV_DESC_TIPO_ES_EN = {
     # r"\bgorro(s)?\b": "Knits",
     # r"\btab(s)?\b": "Tabs",
 }
+def forzar_genero_en_sql_si_corresponde(pregunta: str, sql: str) -> str:
+    """
+    Si en la pregunta hay intención de género y el SQL aún no tiene DESC_GENERO,
+    inyecta el predicado usando el valor guardado en contexto (Woman/Men/Unisex).
+    """
+    if not isinstance(sql, str) or not sql.strip() or not isinstance(pregunta, str):
+        return sql
+
+    gen = st.session_state.get("contexto", {}).get("DESC_GENERO")
+    if not gen:
+        return sql  # no hay género conocido
+
+    if "desc_genero" in sql.lower():
+        return sql  # ya está filtrando
+
+    return _inyectar_predicado_where(sql, f"DESC_GENERO LIKE '%{gen}%'")
+
 def forzar_excluir_centros_distribucion(sql: str) -> str:
     """
     Si el SQL tiene FROM VENTAS y no excluye CDs, agrega el filtro para que
@@ -1430,6 +1447,8 @@ _NEED_DESC_TIENDA_RE = re.compile(r"\b(descripci[oó]n|por\s+descripci[oó]n|tie
 _NEED_PAIS_RE = re.compile(r"\bpa[ií]s(es)?\b", re.I)
 _NEED_CANAL_RE = re.compile(r"\bcanal(es)?\b", re.I)
 _NEED_GROUPING_RE = re.compile(r"\bpor\b", re.I)  # "por descripción/país/canal" suele implicar agrupación
+_NEED_GENERO_RE = re.compile(r"\b(mujer(?:es)?|femenin[oa]|hombre(?:s)?|masculin[oa]|men|woman|women|unisex)\b", re.I)
+
 
 def _sql_has_col(sql: str, col_patterns: list[str]) -> bool:
     s = sql.lower()
@@ -1454,7 +1473,32 @@ def _sql_has_pais(sql: str) -> bool:
     s = sql.lower()
     # Acepta cualquiera de estas señales de país: alias PAIS, CASE SOCIEDAD_CO ... AS PAIS, o la propia SOCIEDAD_CO
     return (" as pais" in s) or ("case sociedad_co" in s) or ("sociedad_co" in s)
+# ✅ NUEVO: helper para ver si el SQL ya filtra por DESC_GENERO
+def _sql_has_genero(sql: str) -> bool:
+    return "desc_genero" in (sql or "").lower()
 
+# ⬇️ REEMPLAZA tu versión por esta
+def _should_reuse_cached_sql(pregunta: str, sql: str) -> bool:
+    q = (pregunta or "")
+    s = (sql or "").lower()
+
+    if _NEED_GROUPING_RE.search(q) and ("group by" not in s):
+        return False
+
+    if _NEED_DESC_TIENDA_RE.search(q) and not _sql_has_col(s, ["desc_tienda"]):
+        return False
+
+    if _NEED_PAIS_RE.search(q) and not _sql_has_pais(s):
+        return False
+
+    if _NEED_CANAL_RE.search(q) and not _sql_has_col(s, ["desc_canal"]):
+        return False
+
+    # ✅ clave: si la nueva pregunta menciona género, el SQL cacheado DEBE tener DESC_GENERO
+    if _NEED_GENERO_RE.search(q) and not _sql_has_genero(s):
+        return False
+
+    return True
 def _should_reuse_cached_sql(pregunta: str, sql: str) -> bool:
     """
     Devuelve True si el SQL cacheado satisface la estructura que la nueva pregunta sugiere.
@@ -1546,6 +1590,27 @@ _MONEY_KEYS = (
 # --- País: detectores ----------------------------------------
  # --- Normalizadores de SQL (margen, importe) y exclusión de servicios --------
 import re
+# Palabras que delatan expresiones de dinero en el SELECT (encabezado)
+_MONETARY_EXPR_RE = re.compile(r"(ingres|cost|margen(?!.*porc)|gm(?!.*porc)|precio|importe|valor|ticket)", re.I)
+
+def remover_filtro_moneda_si_no_monetario(sql: str) -> str:
+    """
+    Si en el SELECT no hay expresiones monetarias, elimina filtros de MONEDA = 'XXX'.
+    Evita dejar 'AND' colgantes.
+    """
+    if not isinstance(sql, str) or not sql.strip():
+        return sql
+
+    s_low = sql.lower()
+    header = s_low.split("from", 1)[0]
+    if _MONETARY_EXPR_RE.search(header):
+        return sql  # hay montos → mantener MONEDA si vino
+
+    # quita "AND MONEDA = 'XXX'" o variantes
+    s = re.sub(r"(?i)\s+AND\s+MONEDA\s*=\s*'?[A-Z]+'?\s*", " ", sql)
+    # limpia AND suelto antes de GROUP/ORDER/LIMIT/fin
+    s = re.sub(r"\s+AND\s+(?=(GROUP|ORDER|LIMIT|$))", " ", s, flags=re.I)
+    return s
 
 def normalizar_margen_sql(sql: str) -> str:
     """
@@ -1968,7 +2033,7 @@ if pregunta:
         st.markdown(pregunta)
 
     # 1) Cache semántica
-    sql_query = buscar_sql_en_cache(pregunta)
+    sql_query = buscar_sql_en_cache(pregunta, umbral_similitud=0.965)
     if sql_query:
         st.info("🔁 Consulta reutilizada desde la cache.")
     else:
@@ -2033,6 +2098,7 @@ if pregunta:
         sql_query = corregir_tipo_vs_linea(sql_query)          # fix general tipo/linea
         sql_query = normalizar_margen_sql(sql_query)
         # Saneador final
+        sql_query = remover_filtro_moneda_si_no_monetario(sql_query)
         sql_query = corregir_ticket_promedio_sql(pregunta_con_contexto, sql_query)
         sql_query = _sanear_puntos_y_comas(sql_query)
         embedding = obtener_embedding(pregunta)
@@ -2143,7 +2209,10 @@ if isinstance(tiendas_list, list) and tiendas_list:
 top_ctx = st.session_state.get("contexto", {}).get("__ultimo_top_venta__")
 if top_ctx:
     chips.append(f"Contexto: {top_ctx['DESC_TIENDA']} • {top_ctx['FECHA_DOCUMENTO']}")
-
+# ✅ NUEVO: muestra el género vigente en el contexto (si existe)
+gen_ctx = st.session_state.get("contexto", {}).get("DESC_GENERO")
+if gen_ctx:
+    chips.append(f"Género: {gen_ctx}")
 
 
 # MOSTRAR TODAS LAS INTERACCIONES COMO CHAT
