@@ -2176,6 +2176,7 @@ if pregunta and _HELP_TRIGGERS_RE.search(pregunta or ""):
 
 sql_query = None
 resultado = ""
+embedding = None              # ← NUEVO
 guardar_en_cache_pending = None
 
 if pregunta:
@@ -2279,7 +2280,9 @@ if pregunta:
         
         # 3) Saneador de ; por si los enforcers añadieron espacios
         sql_query = _sanear_puntos_y_comas(sql_query)
-        guardar_en_cache_pending = embedding if embedding else None
+       # -guardar_en_cache_pending = embedding if embedding else None
+        guardar_en_cache_pending = embedding if ('embedding' in locals() and embedding is not None) else None
+
 
 # 6) Ejecutar SQL (soporta múltiples SELECT separados por ';') — SOLO si hay SQL
 if pregunta and isinstance(sql_query, str) and sql_query.strip():
