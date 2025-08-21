@@ -91,6 +91,63 @@ def _sanear_puntos_y_comas(sql: str) -> str:
     s = re.sub(r"\s+\n", "\n", s).strip()
 
     return s
+# Coloca esto junto a tus otros fixers
+_GEN_TOKENS = r"(Mujer|Hombre|Unisex|Woman|Women|Men)"
+def scrub_genero_fuera_de_genero(sql: str) -> str:
+    """
+    Quita cualquier predicado de género aplicado a columnas distintas de DESC_GENERO.
+    (DESC_ARTICULO, DESC_TIPO, DESC_LINEA, DESC_MARCA, genéricas con UPPER(...), etc.)
+    Limpia conectores colgantes.
+    """
+    if not isinstance(sql, str) or not sql.strip():
+        return sql
+    s = sql
+
+    # Lista de columnas donde NUNCA debe ir el género
+    cols_no_genero = ["DESC_ARTICULO", "DESC_TIPO", "DESC_LINEA", "DESC_MARCA", "DESC_TIENDA"]
+
+    # 1) LIKE '%…%' y UPPER(col) LIKE '%…%'
+    for col in cols_no_genero:
+        patrones = [
+            rf"(?i)\s+AND\s+{col}\s+LIKE\s+'%{_GEN_TOKENS}%'\s*",
+            rf"(?i)\b{col}\s+LIKE\s+'%{_GEN_TOKENS}%'\s+AND\s+",
+            rf"(?i)\b{col}\s+LIKE\s+'%{_GEN_TOKENS}%'\s*",
+            rf"(?i)\s+AND\s+UPPER\(\s*{col}\s*\)\s+LIKE\s+'%{_GEN_TOKENS.upper()}%'\s*",
+            rf"(?i)\bUPPER\(\s*{col}\s*\)\s+LIKE\s+'%{_GEN_TOKENS.upper()}%'\s+AND\s+",
+            rf"(?i)\bUPPER\(\s*{col}\s*\)\s+LIKE\s+'%{_GEN_TOKENS.upper()}%'\s*",
+        ]
+        for p in patrones:
+            s = re.sub(p, " ", s)
+
+    # 2) Limpiezas
+    s = re.sub(r"\s+AND\s+(?=(GROUP|ORDER|LIMIT|$))", " ", s, flags=re.IGNORECASE)
+    s = re.sub(r"(?i)\bWHERE\s+AND\s+", " WHERE ", s)
+    s = re.sub(r"(?i)\bWHERE\s+(?=(GROUP|ORDER|LIMIT|$))", "", s)
+    s = re.sub(r"\s{2,}", " ", s).strip()
+    return s
+def aplicar_genero_obligatorio(sql: str, genero_ctx: str | None) -> str:
+    """
+    Si hay género (Woman/Men/Unisex) en contexto, elimina cualquier predicado previo
+    sobre DESC_GENERO y re‑inyecta exactamente: DESC_GENERO LIKE '%<gen>%'
+    """
+    if not isinstance(sql, str) or not sql.strip() or not genero_ctx:
+        return sql
+
+    s = sql
+    # Quita predicados previos sobre DESC_GENERO (LIKE/EQUALS con cualquier valor)
+    s = re.sub(r"(?i)\s+AND\s+DESC_GENERO\s+(?:NOT\s+)?LIKE\s+'.*?'\s*", " ", s)
+    s = re.sub(r"(?i)\s+AND\s+DESC_GENERO\s*=\s*'.*?'\s*", " ", s)
+    s = re.sub(r"(?i)\bDESC_GENERO\s+(?:NOT\s+)?LIKE\s+'.*?'\s+AND\s+", " ", s)
+    s = re.sub(r"(?i)\bDESC_GENERO\s*=\s*'.*?'\s+AND\s+", " ", s)
+
+    # Inserta el predicado estandarizado
+    s = _inyectar_predicado_where(s, f"DESC_GENERO LIKE '%{genero_ctx}%'")
+
+    # Limpieza conectores
+    s = re.sub(r"\s+AND\s+(?=(GROUP|ORDER|LIMIT|$))", " ", s, flags=re.IGNORECASE)
+    s = re.sub(r"\s{2,}", " ", s).strip()
+    return s
+
 def normalizar_importe_sql(sql: str) -> str:
     """Reemplaza referencias a IMPORTE por INGRESOS (la tabla no tiene IMPORTE)."""
     if not sql or not isinstance(sql, str):
@@ -2187,6 +2244,20 @@ if pregunta:
         # 🧩 NUEVO: si hay género en contexto y aún no aparece, inyectarlo
         sql_query = forzar_genero_en_sql_si_corresponde(pregunta_con_contexto, sql_query)
         # ✅ NUEVO: inyectar género según contexto
+        # 🔒 1) quitar género mal puesto en otras columnas
+        sql_query = scrub_genero_fuera_de_genero(sql_query)
+        
+        # 🔒 2) normalizar género en DESC_GENERO si vino en español (opcional)
+        sql_query = re.sub(r"(?i)(DESC_GENERO\s+LIKE\s+'%)Mujer(%')",  r"\1Woman\2", sql_query)
+        sql_query = re.sub(r"(?i)(DESC_GENERO\s+LIKE\s+'%)Hombre(%')", r"\1Men\2",   sql_query)
+        
+        # 🔒 3) enforcer: usar SOLO DESC_GENERO con el valor del contexto
+        gen_ctx = st.session_state.get("contexto", {}).get("DESC_GENERO")
+        sql_query = aplicar_genero_obligatorio(sql_query, gen_ctx)
+        
+        # (opcional) si por cualquier razón aún no hay DESC_GENERO, inyecta:
+        sql_query = forzar_genero_en_sql_si_corresponde(pregunta_con_contexto, sql_query)
+
         sql_query = forzar_genero_en_sql_si_corresponde(pregunta_con_contexto, sql_query)
         sql_query = remover_filtro_moneda_si_no_monetario(sql_query)
         sql_query = corregir_ticket_promedio_sql(pregunta_con_contexto, sql_query)
