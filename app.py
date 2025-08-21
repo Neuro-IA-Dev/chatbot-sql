@@ -85,6 +85,84 @@ def forzar_genero_al_final(sql: str, genero_ctx: str | None) -> str:
 
     # 4) vuelve a poner el ';' si estaba
     return (s + ";") if had_sc else s
+# --- MARCAS: detectar en la pregunta y forzar DESC_MARCA ---
+_LEVIS_RE   = re.compile(r"(?i)\b(levis|levi[’'´`]?s|levi|l\.?v\.?)\b")
+_DOCKERS_RE = re.compile(r"(?i)\b(dockers|d\.?k\.?)\b")
+
+def detectar_marca_en_pregunta(pregunta: str) -> str | None:
+    if not isinstance(pregunta, str) or not pregunta.strip():
+        return None
+    if _LEVIS_RE.search(pregunta):
+        return "LEVI"       # estandar: usaremos '%LEVI%'
+    if _DOCKERS_RE.search(pregunta):
+        return "DOCKERS"
+    return None
+
+# columnas donde NUNCA debe ir la marca
+_COLS_NO_MARCA = ["DESC_TIENDA", "DESC_ARTICULO", "DESC_TIPO", "DESC_LINEA", "DESC_GENERO"]
+
+def scrub_marca_fuera_de_marca(sql: str) -> str:
+    """
+    Elimina predicados que intentan meter la marca en columnas distintas de DESC_MARCA.
+    Ej: DESC_TIENDA LIKE '%LEVIS%' o UPPER(DESC_ARTICULO) LIKE '%LEVI%'.
+    Limpia conectores colgantes.
+    """
+    if not isinstance(sql, str) or not sql.strip():
+        return sql
+    s = sql
+
+    # Borra intentos de marca en columnas equivocadas (LIKE/NOT LIKE con LEVI/DOCKERS y variantes)
+    tokens = r"(LEVI[’'´`]?S?|LEVIS|LEVI|L\.?V\.?|DOCKERS|D\.?K\.?)"
+    for col in _COLS_NO_MARCA:
+        s = re.sub(rf"(?i)\s+AND\s+{col}\s+(?:NOT\s+)?LIKE\s+'%{tokens}%'\s*", " ", s)
+        s = re.sub(rf"(?i)\b{col}\s+(?:NOT\s+)?LIKE\s+'%{tokens}%'\s+AND\s+", " ", s)
+        s = re.sub(rf"(?i)\b{col}\s+(?:NOT\s+)?LIKE\s+'%{tokens}%'\s*", " ", s)
+        s = re.sub(rf"(?i)\s+AND\s+UPPER\(\s*{col}\s*\)\s+(?:NOT\s+)?LIKE\s+'%{tokens}%'\s*", " ", s)
+        s = re.sub(rf"(?i)\bUPPER\(\s*{col}\s*\)\s+(?:NOT\s+)?LIKE\s+'%{tokens}%'\s+AND\s+", " ", s)
+        s = re.sub(rf"(?i)\bUPPER\(\s*{col}\s*\)\s+(?:NOT\s+)?LIKE\s+'%{tokens}%'\s*", " ", s)
+
+    # Limpia AND sueltos y espacios
+    s = re.sub(r"\s+AND\s+(?=(GROUP|ORDER|LIMIT|$))", " ", s, flags=re.IGNORECASE)
+    s = re.sub(r"(?i)\bWHERE\s+AND\s+", " WHERE ", s)
+    s = re.sub(r"\s{2,}", " ", s).strip()
+    return s
+
+def aplicar_marca_obligatoria(sql: str, marca: str | None) -> str:
+    """
+    Enforcer de MARCA:
+    - Quita predicados previos sobre DESC_MARCA (LIKE/=/NOT LIKE).
+    - Inyecta exactamente: DESC_MARCA LIKE '%<MARCA>%'.
+    """
+    if not isinstance(sql, str) or not sql.strip() or not marca:
+        return sql
+    s = sql
+    # elimina predicados previos sobre marca
+    s = re.sub(r"(?i)\s+AND\s+DESC_MARCA\s+(?:NOT\s+)?LIKE\s+'.*?'\s*", " ", s)
+    s = re.sub(r"(?i)\s+AND\s+DESC_MARCA\s*=\s*'.*?'\s*", " ", s)
+    s = re.sub(r"(?i)\bDESC_MARCA\s+(?:NOT\s+)?LIKE\s+'.*?'\s+AND\s+", " ", s)
+    s = re.sub(r"(?i)\bDESC_MARCA\s*=\s*'.*?'\s+AND\s+", " ", s)
+    # inyecta estandar
+    s = _inyectar_predicado_where(s, f"DESC_MARCA LIKE '%{marca}%'")
+    # limpieza
+    s = re.sub(r"\s+AND\s+(?=(GROUP|ORDER|LIMIT|$))", " ", s, flags=re.IGNORECASE)
+    s = re.sub(r"\s{2,}", " ", s).strip()
+    return s
+
+def forzar_marca_al_final(sql: str, pregunta: str) -> str:
+    """
+    Enforcer FINAL de marca: si la pregunta menciona LEVI/DOCKERS,
+    limpia marca en columnas erróneas y termina con DESC_MARCA LIKE '%...%'.
+    Maneja el ';' final correctamente.
+    """
+    marca = detectar_marca_en_pregunta(pregunta)
+    if not marca or not isinstance(sql, str) or not sql.strip():
+        return sql
+
+    s, had_sc = _strip_trailing_semicolon(sql)
+    s = scrub_marca_fuera_de_marca(s)         # quita marca mal puesta
+    s = aplicar_marca_obligatoria(s, marca)   # estandariza en DESC_MARCA
+    s = _sanear_puntos_y_comas(s)
+    return (s + ";") if had_sc else s
 
 def _sanear_puntos_y_comas(sql: str) -> str:
     """
@@ -2299,6 +2377,8 @@ if pregunta:
         sql_query = remover_filtro_moneda_si_no_monetario(sql_query)
         sql_query = corregir_ticket_promedio_sql(pregunta_con_contexto, sql_query)
         sql_query = _sanear_puntos_y_comas(sql_query)
+        # ✅ NUEVO: marca obligatoria como penúltimo paso (si la pregunta lo requiere)
+        sql_query = forzar_marca_al_final(sql_query, pregunta_con_contexto)
         # 🔒 ÚLTIMO: género obligatorio
         gen_ctx = st.session_state.get("contexto", {}).get("DESC_GENERO")
         sql_query = forzar_genero_al_final(sql_query, gen_ctx)
