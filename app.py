@@ -247,6 +247,27 @@ EQUIV_DESC_TIPO_ES_EN = {
     # r"\bgorro(s)?\b": "Knits",
     # r"\btab(s)?\b": "Tabs",
 }
+# --- GÉNERO: inyectar DESC_GENERO cuando corresponde -------------------------
+def forzar_genero_en_sql_si_corresponde(pregunta: str, sql: str) -> str:
+    """
+    Si la pregunta trae intención de género y el SQL aún no filtra por DESC_GENERO,
+    inyecta DESC_GENERO LIKE '%<Woman|Men|Unisex>%' usando lo que haya en contexto.
+    """
+    if not isinstance(sql, str) or not sql.strip():
+        return sql
+
+    # ¿Tenemos género en contexto?
+    gen = st.session_state.get("contexto", {}).get("DESC_GENERO")
+    if not gen:
+        return sql
+
+    # Si ya filtra, no hacemos nada
+    if "desc_genero" in sql.lower():
+        return sql
+
+    # Inserta el predicado respetando WHERE/GROUP/ORDER/LIMIT
+    return _inyectar_predicado_where(sql, f"DESC_GENERO LIKE '%{gen}%'")
+
 def forzar_genero_en_sql_si_corresponde(pregunta: str, sql: str) -> str:
     """
     Si en la pregunta hay intención de género y el SQL aún no tiene DESC_GENERO,
@@ -2098,6 +2119,8 @@ if pregunta:
         sql_query = corregir_tipo_vs_linea(sql_query)          # fix general tipo/linea
         sql_query = normalizar_margen_sql(sql_query)
         # Saneador final
+        # ✅ NUEVO: inyectar género según contexto
+        sql_query = forzar_genero_en_sql_si_corresponde(pregunta_con_contexto, sql_query)
         sql_query = remover_filtro_moneda_si_no_monetario(sql_query)
         sql_query = corregir_ticket_promedio_sql(pregunta_con_contexto, sql_query)
         sql_query = _sanear_puntos_y_comas(sql_query)
