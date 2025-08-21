@@ -49,6 +49,43 @@ _HELP_TRIGGERS_RE = re.compile(
     r"\b(qu[eé]\s+puedo\s+preguntarte|ayuda|qu[eé]\s+sabes\s+hacer|help)\b",
     re.IGNORECASE
 )
+def _strip_trailing_semicolon(s: str) -> tuple[str, bool]:
+    """Quita ; final (si existe) y devuelve (texto_sin_;, tenia_punto_y_coma)."""
+    if not isinstance(s, str): 
+        return s, False
+    t = s.rstrip()
+    had = t.endswith(";")
+    return (t[:-1].rstrip() if had else t), had
+
+def forzar_genero_al_final(sql: str, genero_ctx: str | None) -> str:
+    """
+    Enforcer FINAL: asegúrate de que el SQL termine conteniendo
+    AND DESC_GENERO LIKE '%<gen>%'
+    - Quita ; final, inyecta el predicado justo al final del WHERE
+      (antes de GROUP/ORDER/LIMIT si existen) y luego re‑pone el ;
+    - Limpia cualquier predicado previo sobre DESC_GENERO para evitar duplicados.
+    """
+    if not isinstance(sql, str) or not sql.strip() or not genero_ctx:
+        return sql
+
+    s, had_sc = _strip_trailing_semicolon(sql)
+
+    # 1) elimina cualquier predicado previo sobre DESC_GENERO
+    s = re.sub(r"(?i)\s+AND\s+DESC_GENERO\s+(?:NOT\s+)?LIKE\s+'.*?'\s*", " ", s)
+    s = re.sub(r"(?i)\s+AND\s+DESC_GENERO\s*=\s*'.*?'\s*", " ", s)
+    s = re.sub(r"(?i)\bDESC_GENERO\s+(?:NOT\s+)?LIKE\s+'.*?'\s+AND\s+", " ", s)
+    s = re.sub(r"(?i)\bDESC_GENERO\s*=\s*'.*?'\s+AND\s+", " ", s)
+
+    # 2) inyecta el predicado
+    s = _inyectar_predicado_where(s, f"DESC_GENERO LIKE '%{genero_ctx}%'")
+
+    # 3) limpieza mínima
+    s = re.sub(r"\s+AND\s+(?=(GROUP|ORDER|LIMIT|$))", " ", s, flags=re.IGNORECASE)
+    s = re.sub(r"\s{2,}", " ", s).strip()
+
+    # 4) vuelve a poner el ';' si estaba
+    return (s + ";") if had_sc else s
+
 def _sanear_puntos_y_comas(sql: str) -> str:
     """
     Arregla ';' mal ubicados en una única sentencia SQL:
@@ -2262,6 +2299,9 @@ if pregunta:
         sql_query = remover_filtro_moneda_si_no_monetario(sql_query)
         sql_query = corregir_ticket_promedio_sql(pregunta_con_contexto, sql_query)
         sql_query = _sanear_puntos_y_comas(sql_query)
+        # 🔒 ÚLTIMO: género obligatorio
+        gen_ctx = st.session_state.get("contexto", {}).get("DESC_GENERO")
+        sql_query = forzar_genero_al_final(sql_query, gen_ctx)
         embedding = obtener_embedding(pregunta)
         guardar_en_cache_pending = embedding if embedding else None
 
