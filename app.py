@@ -288,25 +288,7 @@ def asegurar_exclusion_servicios(sql: str) -> str:
                "UPPER(DESC_ARTICULO) NOT LIKE '%BOLSA%'", s)
     return s
 # Diccionario con las columnas reales por tabla
-COLUMNAS_VALIDAS = {
-    "ventas": [
-        "numero_documento", "cod_articulo", "ingresos", "costos", "tipo_documento",
-        "cod_tienda", "fecha_venta"
-    ],
-    "articulos": [
-        "cod_articulo", "desc_articulo", "desc_generico", 
-        "desc_temporada", "desc_grado_moda"
-    ],
-    "tiendas": [
-        "cod_tienda", "desc_tienda", "cod_canal", "cod_marca"
-    ],
-    "marca": [
-        "cod_marca", "desc_marca"
-    ],
-    "canal": [
-        "cod_canal", "desc_canal"
-    ]
-}
+
 
 def render_help_capacidades():
     st.markdown("## 🤖 ¿Qué puedes preguntarme?")
@@ -421,41 +403,14 @@ EQUIV_DESC_TIPO_ES_EN = {
 }
 # --- GÉNERO: inyectar DESC_GENERO cuando corresponde -------------------------
 def forzar_genero_en_sql_si_corresponde(pregunta: str, sql: str) -> str:
-    """
-    Si la pregunta trae intención de género y el SQL aún no filtra por DESC_GENERO,
-    inyecta DESC_GENERO LIKE '%<Woman|Men|Unisex>%' usando lo que haya en contexto.
-    """
     if not isinstance(sql, str) or not sql.strip():
         return sql
-
-    # ¿Tenemos género en contexto?
     gen = st.session_state.get("contexto", {}).get("DESC_GENERO")
-    if not gen:
+    if not gen or "desc_genero" in sql.lower():
         return sql
-
-    # Si ya filtra, no hacemos nada
-    if "desc_genero" in sql.lower():
-        return sql
-
-    # Inserta el predicado respetando WHERE/GROUP/ORDER/LIMIT
     return _inyectar_predicado_where(sql, f"DESC_GENERO LIKE '%{gen}%'")
 
-def forzar_genero_en_sql_si_corresponde(pregunta: str, sql: str) -> str:
-    """
-    Si en la pregunta hay intención de género y el SQL aún no tiene DESC_GENERO,
-    inyecta el predicado usando el valor guardado en contexto (Woman/Men/Unisex).
-    """
-    if not isinstance(sql, str) or not sql.strip() or not isinstance(pregunta, str):
-        return sql
 
-    gen = st.session_state.get("contexto", {}).get("DESC_GENERO")
-    if not gen:
-        return sql  # no hay género conocido
-
-    if "desc_genero" in sql.lower():
-        return sql  # ya está filtrando
-
-    return _inyectar_predicado_where(sql, f"DESC_GENERO LIKE '%{gen}%'")
 
 def forzar_excluir_centros_distribucion(sql: str) -> str:
     """
@@ -501,27 +456,9 @@ def forzar_excluir_centros_distribucion(sql: str) -> str:
             return sql.rstrip() + " WHERE DESC_TIENDA NOT LIKE '%CENTRO%DISTRIB%'"
 # ==== Helpers de inyección y fixers de marca/artículo ====
 
-# Inserta un predicado respetando si ya hay WHERE o no
-def _inyectar_predicado_where(sql: str, predicado: str) -> str:
-    if not sql:
-        return sql
-    tail_re = re.compile(r"(?i)\b(group\s+by|order\s+by|limit)\b")
-    if re.search(r"(?i)\bwhere\b", sql):
-        m = tail_re.search(sql)
-        if m:
-            i = m.start()
-            return sql[:i].rstrip() + " AND " + predicado + " " + sql[i:]
-        return sql.rstrip() + " AND " + predicado
-    else:
-        m = tail_re.search(sql)
-        if m:
-            i = m.start()
-            return sql[:i].rstrip() + " WHERE " + predicado + " " + sql[i:]
-        return sql.rstrip() + " WHERE " + predicado
 
-# --- MARCAS: LEVI'S / DOCKERS deben ir SIEMPRE por DESC_MARCA ---
-_LEVIS_RE   = re.compile(r"\b(levis|levi[’'´`]?s|levi|lv)\b", re.I)
-_DOCKERS_RE = re.compile(r"\b(dockers|dk)\b", re.I)
+
+
 
 def forzar_marca_en_sql_si_corresponde(pregunta: str, sql: str) -> str:
     if not sql or not pregunta:
@@ -570,6 +507,7 @@ def _inyectar_predicado_where(sql: str, predicado: str) -> str:
             i = m.start()
             return sql[:i].rstrip() + " WHERE " + predicado + " " + sql[i:]
         return sql.rstrip() + " WHERE " + predicado
+
 
 # --- MARCAS: LEVI'S / DOCKERS deben ir SIEMPRE por DESC_MARCA ---
 _LEVIS_RE   = re.compile(r"\b(levis|levi[’'´`]?s|levi|lv)\b", re.I)
@@ -826,16 +764,7 @@ def mapear_genero_es_en(texto: str) -> tuple[str, str | None]:
             genero = canon                 # recuerda el género detectado
     return t, genero
 
-def forzar_genero_en_sql_si_corresponde(pregunta: str, sql: str) -> str:
-    """
-    Si hay género en contexto y el SQL no filtra por DESC_GENERO, lo inyecta.
-    """
-    if not isinstance(sql, str) or not sql.strip():
-        return sql
-    gen = st.session_state.get("contexto", {}).get("DESC_GENERO")
-    if not gen or "desc_genero" in sql.lower():
-        return sql
-    return _inyectar_predicado_where(sql, f"DESC_GENERO LIKE '%{gen}%'")
+
 
 def corregir_genero_mal_puesto_en_sql(sql: str) -> str:
     """
@@ -1931,17 +1860,7 @@ def _insertar_predicado(sql: str, predicado: str) -> str:
         return sql.rstrip() + f" WHERE {predicado}"
 
 
-def asegurar_exclusion_servicios(sql: str) -> str:
-    if not sql or not isinstance(sql, str):
-        return sql
-    s = sql
-    s = re.sub(r"(?i)UPPER\(\s*DESC_ARTICULO\s*\)\s+LIKE\s+'FLETE%'", 
-               "UPPER(DESC_ARTICULO) NOT LIKE 'FLETE%'", s)
-    s = re.sub(r"(?i)UPPER\(\s*DESC_ARTICULO\s*\)\s+LIKE\s+'DESPACHO A DOMICILIO'",
-               "UPPER(DESC_ARTICULO) NOT LIKE 'DESPACHO A DOMICILIO'", s)
-    s = re.sub(r"(?i)UPPER\(\s*DESC_ARTICULO\s*\)\s+LIKE\s+'%BOLSA%'", 
-               "UPPER(DESC_ARTICULO) NOT LIKE '%BOLSA%'", s)
-    return s
+
 
 
 def _habla_de_pais(texto: str) -> bool:
@@ -2329,60 +2248,38 @@ if pregunta:
         prompt_text = sql_prompt.format(pregunta=pregunta_con_contexto)
         sql_query = llm.predict(prompt_text).replace("```sql", "").replace("```", "").strip()
 
-        # 4) Forzar DISTINCT si corresponde
-        sql_query = forzar_distinct_canal_si_corresponde(pregunta_con_contexto, sql_query)
-        # 4b) Forzar exclusión de Centros de Distribución
-        sql_query = forzar_excluir_centros_distribucion(sql_query)
-        # ➜ NUEVO: fuerza marca cuando la pregunta menciona LEVI'S/DOCKERS
-        sql_query = forzar_marca_en_sql_si_corresponde(pregunta_con_contexto, sql_query)
-
-        # ➜ NUEVO: si la intención es producto/artículo, restringe a MODE y excluye bolsas/fletes/despachos/PACKING BAGS
-        sql_query = forzar_articulo_y_excluir_bolsas(pregunta_con_contexto, sql_query)
-        # 4c) 🔧 Saneador de ';' mal puestos
-        # 👇 nuevos seguros
-        sql_query = normalizar_margen_sql(sql_query)
-        sql_query = normalizar_importe_sql(sql_query)
-        sql_query = asegurar_exclusion_servicios(sql_query)  # opcional
-        sql_query = _sanear_puntos_y_comas(sql_query)
-        # ➜ NUEVO: "más compras" = SUM(UNIDADES) por defecto
-        sql_query = preferir_unidades_para_mas_compras(pregunta_con_contexto, sql_query)
-        # 5) Preparar guardado en cache
-        # ✅ NUEVO: validar/corregir identificadores de columnas
+        # --- saneos previos (pueden quedar antes de los enforcers) ---
         sql_query = corregir_identificadores_sql(sql_query)
         sql_query = forzar_articulo_y_excluir_bolsas(pregunta_con_contexto, sql_query)
-        sql_query = corregir_jeans_en_linea(sql_query)         # fix específico jeans
-        sql_query = corregir_tipo_vs_linea(sql_query)          # fix general tipo/linea
+        sql_query = corregir_jeans_en_linea(sql_query)
+        sql_query = corregir_tipo_vs_linea(sql_query)
         sql_query = normalizar_margen_sql(sql_query)
-        # Saneador final
-        # 🧩 NUEVO: corrige si el LLM puso Mujer/Hombre/Unisex en DESC_ARTICULO
-        sql_query = corregir_genero_mal_puesto_en_sql(sql_query)
-        # 🧩 NUEVO: si hay género en contexto y aún no aparece, inyectarlo
-        sql_query = forzar_genero_en_sql_si_corresponde(pregunta_con_contexto, sql_query)
-        # ✅ NUEVO: inyectar género según contexto
-        # 🔒 1) quitar género mal puesto en otras columnas
-        sql_query = scrub_genero_fuera_de_genero(sql_query)
-        
-        # 🔒 2) normalizar género en DESC_GENERO si vino en español (opcional)
-        sql_query = re.sub(r"(?i)(DESC_GENERO\s+LIKE\s+'%)Mujer(%')",  r"\1Woman\2", sql_query)
-        sql_query = re.sub(r"(?i)(DESC_GENERO\s+LIKE\s+'%)Hombre(%')", r"\1Men\2",   sql_query)
-        
-        # 🔒 3) enforcer: usar SOLO DESC_GENERO con el valor del contexto
-        gen_ctx = st.session_state.get("contexto", {}).get("DESC_GENERO")
-        sql_query = aplicar_genero_obligatorio(sql_query, gen_ctx)
-        
-        # (opcional) si por cualquier razón aún no hay DESC_GENERO, inyecta:
-        sql_query = forzar_genero_en_sql_si_corresponde(pregunta_con_contexto, sql_query)
-
-        sql_query = forzar_genero_en_sql_si_corresponde(pregunta_con_contexto, sql_query)
-        sql_query = remover_filtro_moneda_si_no_monetario(sql_query)
+        sql_query = normalizar_importe_sql(sql_query)
+        sql_query = asegurar_exclusion_servicios(sql_query)
+        sql_query = preferir_unidades_para_mas_compras(pregunta_con_contexto, sql_query)
         sql_query = corregir_ticket_promedio_sql(pregunta_con_contexto, sql_query)
+        sql_query = remover_filtro_moneda_si_no_monetario(sql_query)
+        sql_query = corregir_genero_mal_puesto_en_sql(sql_query)   # quita género en DESC_ARTICULO y normaliza Mujer/Hombre
+        sql_query = scrub_genero_fuera_de_genero(sql_query)        # limpia géneros mal puestos en otras columnas
         sql_query = _sanear_puntos_y_comas(sql_query)
-        # ✅ NUEVO: marca obligatoria como penúltimo paso (si la pregunta lo requiere)
+        
+        # --- ENFORCERS FINALES: lo último que toca el WHERE ---
+        # 1) MARCA FINAL (usa la marca detectada en la pregunta y mueve todo a DESC_MARCA)
         sql_query = forzar_marca_al_final(sql_query, pregunta_con_contexto)
-        # 🔒 ÚLTIMO: género obligatorio
+        
+        # 2) GÉNERO FINAL (usa contexto o extrae de la pregunta ya normalizada)
         gen_ctx = st.session_state.get("contexto", {}).get("DESC_GENERO")
+        if not gen_ctx:
+            m = re.search(r"\b(Woman|Men|Unisex)\b", pregunta_con_contexto, re.I)
+            if m:
+                gen_ctx = m.group(1).title()
+                st.session_state.setdefault("contexto", {})["DESC_GENERO"] = gen_ctx
+        
         sql_query = forzar_genero_al_final(sql_query, gen_ctx)
-        embedding = obtener_embedding(pregunta)
+        
+        # 3) Saneador de ; por si los enforcers añadieron espacios
+        sql_query = _sanear_puntos_y_comas(sql_query)
+
         guardar_en_cache_pending = embedding if embedding else None
 
 
